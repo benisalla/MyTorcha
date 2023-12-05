@@ -4,7 +4,15 @@ MyTorcha is a small framework (a baby framework hoping it will grow to become an
 
 I have built it using Python, but the main implementation is with C++, and I have not revealed it yet, but I will, Inxallah. The main idea behind this way of building neural nets and training them is based on graph theory, especially a one-way graph. This graph contains basically all the information about the weights, biases, their derivatives, as well as the activation functions that I will explain in the following sections.
 
+
+<div align="center">
+  <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/288189698-874ae81f-1951-4698-af3a-ee28468703ac.gif" width="800" height="400" />
+</div>
+
+
 So is that all? No, as long as I am breathing, none of my works will stop (hopefully); I am working on convnets and transformers using the same logic (they are almost done; I am still just fixing and debugging some errors).
+
+
 
 
 ## what motivated me to start such a project?
@@ -14,10 +22,14 @@ But what motivates me more is the thought and the belief that is running in my v
 
 
 
+
 <div align="center">
-  <h5>Micro-Tiny-GPT</h5>
-  <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/264447768-39a2a1a9-ca80-44cd-9d83-fd1358cb379b.png" width="200" height="200" />
+  <h5>MyTorcha</h5>
+  <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/288193776-a2eb7531-5305-4c5b-98d5-875bfb619a08.png" width="200" height="200" />
 </div>
+
+
+<!--
 
 ## NOTE
 
@@ -333,13 +345,12 @@ Acknowledge the significant contributions of your colleagues, attributing specif
 - [Daoudi Ayoub](https://github.com/Daoudi-Ayoub)
 
 
-
+-->
 
 
 ## Contact Us
 For inquiries or suggestions, please contact:
-- Project Lead: Ben alla ismail ([ismailbenalla52@gmail.com](mailto:ismailbenalla52@gmail.com))
-- Co-lead: mhaoui Siham ([mahouisiham@gmail.com](mailto:mahouisiham@gmail.com))
+- Creator: Ben alla ismail ([ismailbenalla52@gmail.com](mailto:ismailbenalla52@gmail.com))
 
 
 
@@ -373,6 +384,7 @@ Let's connect and explore the fascinating world of artificial intelligence toget
 
 
 <div align="center">
-  <h4>You are about to witness some pure magic ✨🎩 !! Ta-da!</h4>
-  <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/270190847-0b3ee23b-c082-483e-9e12-8b15a1b8f0a3.gif" width="500" height="300"/>
+  <h4>Neural nets be like:</h4>
+  <h4>Ask me anything, but I'll still find a way to say 'I don't know, ask the layers below me.</h4>
+  <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/288196444-aae5a2b5-6623-4f1e-9149-be45342093c3.gif" width="500" height="300"/>
 </div>
