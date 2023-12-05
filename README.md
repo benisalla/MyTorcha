@@ -45,7 +45,7 @@ But what motivates me more is the thought and the belief that is running in my v
 This is an important notice. It provides additional information or a reminder.
 </aside>
 
-
+-->
 
 
 
@@ -68,7 +68,7 @@ This is an important notice. It provides additional information or a reminder.
 
 
 
-
+<!--
 
 # Introduction
 Welcome to the Micro-Tiny GPT-2 Model repository! This project is an exploration into building a compact GPT-2 model from scratch, taking inspiration from the Hugging Face Transformers and OpenAI architectures. Developed during an internship at 3D Smart Factory, this model represents our dedication to creating advanced AI solutions despite our learning phase.
@@ -346,6 +346,8 @@ Acknowledge the significant contributions of your colleagues, attributing specif
 
 
 -->
+
+
 
 
 ## Contact Us
