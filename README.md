@@ -25,7 +25,7 @@ But what motivates me more is the thought and the belief that is running in my v
 
 <div align="center">
   <h5>MyTorcha</h5>
-  <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/288193776-a2eb7531-5305-4c5b-98d5-875bfb619a08.png" width="200" height="200" />
+  <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/288193776-a2eb7531-5305-4c5b-98d5-875bfb619a08.png" width="400" height="400" />
 </div>
 
 
