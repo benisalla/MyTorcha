@@ -29,7 +29,6 @@ Is this the end? No! As long as I’m breathing, none of my projects will stop (
 - [Future Roadmap](#future-roadmap)
 - [Contributing](#contributing)
 - [Contact](#contact)
-- [About Me](#about-me)
 
 ---
 
@@ -161,9 +160,3 @@ Let’s connect and explore the world of AI together! 🤖🌟
 <div align="center">
   <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/288196444-aae5a2b5-6623-4f1e-9149-be45342093c3.gif" width="500" height="300" alt="Neural Net Humor"/>
 </div>
-
----
-
-## About Me
-
-Hi, I'm **Ismail Ben Alla**, an AI researcher and developer. This project reflects my desire to deeply understand and demystify neural networks. I’m continuously working on expanding **MyTorcha** and other AI-related projects. Let’s collaborate and create something amazing!
