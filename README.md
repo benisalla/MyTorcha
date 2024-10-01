@@ -1,7 +1,3 @@
-Here’s an updated version of your README for **MyTorcha** with improved grammar, structure, and formatting:
-
----
-
 # MyTorcha
 
 **MyTorcha** is a small framework (a baby framework that hopes to grow into something bigger, Inshallah). Currently, it's very simple and includes a neuron, layer, and a mechanism to stack layers according to your needs. You can find more details about its components below.
