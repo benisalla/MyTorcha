@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chapter 7 · Attention and Transformers · MyTorcha</title>
+<meta name="description" content="Scaled dot-product attention, causal masks, multi-head attention and a tiny GPT-style Transformer built with MyTorcha.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="24" height="24">MyTorcha</a>
+  <button type="button" class="menu-btn" aria-controls="sidebar" aria-expanded="false">Chapters</button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Chapters">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="28" height="28">MyTorcha</a>
+  <p class="tagline">A baby deep learning framework, built from scratch so nothing is magic.</p>
+  <ol>
+<li><a href="index.html"><span class="num">·</span>Start here</a></li>
+<li><a href="01-autograd.html"><span class="num">01</span>Autograd with single numbers</a></li>
+<li><a href="02-tensors.html"><span class="num">02</span>Tensors</a></li>
+<li><a href="03-modules.html"><span class="num">03</span>Modules and layers</a></li>
+<li><a href="04-training.html"><span class="num">04</span>Losses, optimizers, training</a></li>
+<li><a href="05-cnn.html"><span class="num">05</span>Convolutional networks</a></li>
+<li><a href="06-rnn.html"><span class="num">06</span>RNN, LSTM, GRU</a></li>
+<li><a href="07-attention.html" aria-current="page"><span class="num">07</span>Attention and Transformers</a></li>
+<li><a href="reference.html"><span class="num">API</span>API reference</a></li>
+  </ol>
+  <p class="side-foot"><a href="https://github.com/benisalla/MyTorcha">Source on GitHub</a></p>
+</nav>
+<main id="main">
+<article class="content">
+<p class="kicker">Chapter 7</p>
+<h1>Attention and Transformers</h1>
+<p class="lead">An RNN passes information along one step at a time. Attention lets every position look at every other position directly, in one matrix multiply. That's all a Transformer is, plus some careful plumbing.</p>
+
+<h2 id="sdpa">Scaled dot-product attention</h2>
+<div class="math">Attention(Q, K, V) = softmax( Q·Kᵀ / √d ) · V</div>
+<p>Each position has a <strong>query</strong> ("what am I looking for?"), a <strong>key</strong> ("what do I contain?") and a <strong>value</strong> ("what do I hand over if chosen?"). <code>Q·Kᵀ</code> scores every query against every key. The softmax turns each row into weights that sum to 1. The output is the weighted average of the values. Dividing by √d keeps the scores from growing with the dimension, which would otherwise push the softmax into a saturated corner with tiny gradients.</p>
+<div class="code"><pre><code class="lang-python">import numpy as np
+import mytorcha as mt
+import mytorcha.functional as F
+
+q = k = v = mt.Tensor(np.eye(3))                 # 3 positions, d = 3
+mask = np.triu(np.ones((3, 3), bool), 1)         # True = NOT allowed: the future
+print(mask)
+print(F.scaled_dot_product_attention(q, k, v, mask).data.round(3))</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>[[False  True  True]
+ [False False  True]
+ [False False False]]
+[[1.    0.    0.   ]
+ [0.36  0.64  0.   ]
+ [0.264 0.264 0.471]]</code></pre></div>
+<p>Read the output row by row. Position 0 can only see itself. Position 1 sees positions 0 and 1 and prefers itself (its own key matches its query best). Nobody sees the future. That upper-triangular <strong>causal mask</strong> is what lets a GPT train on every position of a sequence at once without cheating. Masked scores are set to −10⁹ with <code>masked_fill</code> before the softmax, so they get a weight of 0.</p>
+
+<h2 id="mha">Multi-head attention</h2>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn
+
+mt.manual_seed(0)
+attn = nn.MultiheadAttention(16, num_heads=4)
+x = mt.randn(2, 5, 16)                           # (N, T, embed_dim)
+print(attn(x, causal=True).shape, attn.num_parameters())</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>(2, 5, 16) 1088</code></pre></div>
+<p>The input is projected to Q, K and V (three <code>Linear(16, 16)</code> layers), and each is split into 4 heads of 4 dimensions. Each head attends independently, which lets one head track "the previous word" while another tracks "the subject of the sentence". The heads are concatenated and mixed by <code>out_proj</code>. That's 4 × (16·16 + 16) = 1,088 parameters.</p>
+<p><code>forward(query, key=None, value=None, mask=None, causal=False)</code>: with only <code>query</code> it's self-attention. Pass <code>key</code>/<code>value</code> from another sequence for cross-attention (as in a captioning or translation decoder). <code>mask</code> is True where attention is <em>blocked</em>, for example padding. The output is checked against <code>torch.nn.MultiheadAttention</code> with a causal mask in the tests. One difference: MyTorcha returns only the output, not the attention weights.</p>
+
+<h2 id="block">The Transformer block</h2>
+<div class="math">x = x + Attention(LayerNorm(x))      ← talk to the other positions
+x = x + MLP(LayerNorm(x))            ← think about it, position by position (MLP = Linear → GELU → Linear)</div>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn
+
+mt.manual_seed(0)
+x = mt.randn(2, 5, 16)
+block = nn.TransformerEncoderLayer(16, nhead=4)  # dim_feedforward defaults to 4·d_model
+print(block(x, causal=True).shape, block.num_parameters())</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>(2, 5, 16) 3280</code></pre></div>
+<p>This is the <strong>pre-norm</strong> layout used by GPT-2 and most modern models: LayerNorm is applied <em>before</em> each sub-layer, and the residual path <code>x + …</code> is left untouched. That path is a gradient highway through the depth of the network, playing the same role the LSTM's cell state plays through time.</p>
+
+<h2 id="positions">Embeddings and positions</h2>
+<p>Attention by itself is order-blind: shuffle the tokens and each one gets the same output, just shuffled. So we add a <strong>position embedding</strong> to each token embedding. Both are plain <code>nn.Embedding</code> lookup tables. Their gradient is a scatter-add (<code>np.add.at</code>), so a token that appears three times in a batch collects three gradients.</p>
+<div class="code"><pre><code class="lang-python">import numpy as np
+from mytorcha import nn
+
+emb = nn.Embedding(20, 16)                       # 20 tokens, 16-d vectors
+print(emb(np.array([[3, 1, 4, 1, 5]])).shape)    # integer ids of any shape -&gt; (..., 16)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>(1, 5, 16)</code></pre></div>
+<h2 id="gpt">Example: a tiny GPT</h2>
+<p><code>examples/06_tiny_transformer.py</code> builds a two-block, 4-head, 48-dimensional GPT with token embedding + position embedding → blocks with <code>causal=True</code> → LayerNorm → Linear to the vocabulary. It's trained with AdamW on our motto, repeated 40 times, in 32-character windows.</p>
+<div class="code"><pre><code class="lang-python">class TinyGPT(nn.Module):
+    def __init__(self, vocab, d=48, heads=4, layers=2):
+        self.tok, self.pos = nn.Embedding(vocab, d), nn.Embedding(T, d)
+        self.blocks = [nn.TransformerEncoderLayer(d, heads) for _ in range(layers)]
+        self.ln, self.head = nn.LayerNorm(d), nn.Linear(d, vocab)
+
+    def forward(self, ids):
+        x = self.tok(ids) + self.pos(np.arange(ids.shape[1]))
+        for block in self.blocks:
+            x = block(x, causal=True)    # each position may only look at the past
+        return self.head(self.ln(x))</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>59,825 parameters
+step   0 | loss 3.068
+step  50 | loss 0.600
+step 100 | loss 0.095
+step 150 | loss 0.063
+step 200 | loss 0.059
+greedy sample: the deal is in the details. i do not learn things until i build them. the deal is in</code></pre></div>
+<p>The loss falls from 3.07 to 0.059 in 200 steps, and greedy decoding reproduces the training sentence, then loops back to its beginning. Like the LSTM, it has memorised a tiny text. Unlike the LSTM, every position of a window is trained in parallel: there's no hidden state to wait for, step after step.</p>
+<div class="note"><p><strong>Why the loss doesn't reach 0.</strong> The first positions of each window have almost no context. After a lone <code>t</code> the next character could be <code>h</code> (the, things, them), <code>a</code> (details), <code>i</code> (until) or a space (not), so those predictions stay uncertain however long you train.</p></div>
+
+<h2 id="next">Where to go from here</h2>
+<ul>
+  <li>Read <code>src/mytorcha/tensor.py</code> top to bottom. It's under 400 lines, and it's the whole engine.</li>
+  <li>Add an op. Write forward and <code>grad_fn</code>, then prove it with <code>gradcheck</code>. A good first one is <code>Tensor.std</code>, or <code>sin</code>/<code>cos</code>.</li>
+  <li>Swap the GPT's data for a real text file and train it longer. It will stop memorising and start inventing.</li>
+  <li>Then open PyTorch's documentation. Every page will read like a description of something you've already built.</li>
+</ul>
+
+<h2 id="try">Try it</h2>
+<details class="try"><summary>1. Without the causal mask, what would the tiny GPT learn during training?</summary>
+<div class="answer"><p>To copy: the answer for position t is the input at position t + 1, which it could simply look at. The training loss would drop to near zero, and generation would be garbage, because at generation time the future doesn't exist yet.</p></div></details>
+<details class="try"><summary>2. Why √d and not d?</summary>
+<div class="answer"><p>If q and k have independent unit-variance entries, q·k is a sum of d terms with variance d, so its standard deviation is √d. Dividing by √d brings the scores back to unit scale.</p></div></details>
+<details class="try"><summary>3. Remove the position embedding from TinyGPT (<code>x = self.tok(ids)</code>). Does it still learn the sentence?</summary>
+<div class="answer"><p><strong>Yes, and that surprised us too.</strong> We ran it: loss 3.036 → 0.060 at step 200 (vs 0.059 with positions), with the same greedy sample. The causal mask leaks order on its own. Position t averages over exactly t + 1 tokens, so the model can work out where it is. Decoder-only models without position embeddings ("NoPE") are a known research result. Without the causal mask, though, attention really is order-blind. A good lesson in testing the textbook claim instead of repeating it.</p></div></details>
+
+<nav class="pager" aria-label="Chapter navigation"><a class="prev" href="06-rnn.html" rel="prev"><span>← Previous</span>RNN, LSTM, GRU</a><a class="next" href="reference.html" rel="next"><span>Next →</span>API reference</a></nav>
+<p class="foot">MyTorcha by <a href="https://github.com/benisalla">Ismail Ben Alla</a>. MIT licensed. The deal is in the details.</p>
+</article>
+</main>
+</div>
+</body>
+</html>

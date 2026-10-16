@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chapter 6 · Recurrent networks: RNN, LSTM, GRU · MyTorcha</title>
+<meta name="description" content="Recurrent layers in MyTorcha: cell equations, shapes, backpropagation through time, gradient clipping, a sine forecaster and a character-level LSTM.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="24" height="24">MyTorcha</a>
+  <button type="button" class="menu-btn" aria-controls="sidebar" aria-expanded="false">Chapters</button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Chapters">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="28" height="28">MyTorcha</a>
+  <p class="tagline">A baby deep learning framework, built from scratch so nothing is magic.</p>
+  <ol>
+<li><a href="index.html"><span class="num">·</span>Start here</a></li>
+<li><a href="01-autograd.html"><span class="num">01</span>Autograd with single numbers</a></li>
+<li><a href="02-tensors.html"><span class="num">02</span>Tensors</a></li>
+<li><a href="03-modules.html"><span class="num">03</span>Modules and layers</a></li>
+<li><a href="04-training.html"><span class="num">04</span>Losses, optimizers, training</a></li>
+<li><a href="05-cnn.html"><span class="num">05</span>Convolutional networks</a></li>
+<li><a href="06-rnn.html" aria-current="page"><span class="num">06</span>RNN, LSTM, GRU</a></li>
+<li><a href="07-attention.html"><span class="num">07</span>Attention and Transformers</a></li>
+<li><a href="reference.html"><span class="num">API</span>API reference</a></li>
+  </ol>
+  <p class="side-foot"><a href="https://github.com/benisalla/MyTorcha">Source on GitHub</a></p>
+</nav>
+<main id="main">
+<article class="content">
+<p class="kicker">Chapter 6</p>
+<h1>Recurrent networks: RNN, LSTM, GRU</h1>
+<p class="lead">A recurrent network reads a sequence one step at a time and carries a memory, the hidden state, from each step to the next. It's one small cell, applied T times.</p>
+
+<h2 id="shapes">Shapes first</h2>
+<p>MyTorcha's recurrent layers are <strong>batch-first</strong>: input <code>(N, T, input_size)</code>, output <code>(N, T, hidden·directions)</code>. (PyTorch defaults to time-first. We picked the version that's harder to get wrong.)</p>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn
+
+mt.manual_seed(0)
+x = mt.randn(4, 7, 10)                       # (batch N, time T, features)
+out, h = nn.RNN(10, 32)(x)
+print(out.shape, h.shape)
+out, (h, c) = nn.LSTM(10, 32, num_layers=2, bidirectional=True)(x)
+print(out.shape, h.shape, c.shape)
+print(nn.GRU(10, 32)(x)[0].shape)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>(4, 7, 32) (1, 4, 32)
+(4, 7, 64) (4, 4, 32) (4, 4, 32)
+(4, 7, 32)</code></pre></div>
+<ul>
+  <li><code>out</code> is the top layer's hidden state at <em>every</em> time step: use it for per-step predictions.</li>
+  <li><code>h</code> (and <code>c</code> for the LSTM) is the <em>final</em> state of every layer and direction, with shape <code>(num_layers·dirs, N, H)</code>. That's 2 layers × 2 directions = 4 above. Use it to classify a whole sequence, or pass it back in to continue one.</li>
+  <li><code>bidirectional=True</code> runs a second cell backwards in time and concatenates both, which is why it's 64 = 2×32 features.</li>
+</ul>
+
+<h2 id="cells">The three cells</h2>
+<p>All three cells use PyTorch's weight names (<code>weight_ih</code>, <code>weight_hh</code>, <code>bias_ih</code>, <code>bias_hh</code>) and gate order, and the tests copy weights into <code>torch.nn.LSTM</code>/<code>GRU</code>/<code>RNN</code> and match outputs and gradients to 10⁻¹⁰ (2 layers, bidirectional).</p>
+<h3>RNN (Elman)</h3>
+<div class="math">h' = tanh(x·W_ihᵀ + b_ih + h·W_hhᵀ + b_hh)</div>
+<p>It's simple, and it forgets fast. Backpropagating through T steps multiplies T Jacobians together, so gradients shrink (vanish) or blow up (explode) exponentially with T.</p>
+<h3>LSTM: gates i, f, g, o</h3>
+<div class="math">i = σ(·)   f = σ(·)   g = tanh(·)   o = σ(·)      ← one matmul gives all four (weight_ih is 4H × input)
+c' = f·c + i·g                                   ← the cell state is only scaled and added to
+h' = o·tanh(c')</div>
+<p>The trick is <code>c</code>. It's updated by <em>gated addition</em> rather than squashed through a matrix every step. When the forget gate f ≈ 1, the gradient flows back along c almost unchanged: a gradient highway through time. That's why LSTMs remember over hundreds of steps where plain RNNs give up after a dozen. Here's the code from <code>src/mytorcha/nn/recurrent.py</code>:</p>
+<div class="code"><pre><code class="lang-python">def step(self, xp, state):          # xp = x @ W_ihᵀ + b_ih, precomputed for all steps
+    h, c = state
+    z = xp + self.project_hidden(h)
+    H = self.hidden_size
+    i, f = F.sigmoid(z[:, :H]), F.sigmoid(z[:, H : 2 * H])
+    g, o = F.tanh(z[:, 2 * H : 3 * H]), F.sigmoid(z[:, 3 * H :])
+    c = f * c + i * g
+    return o * F.tanh(c), c</code></pre></div>
+<h3>GRU: gates r, z, n</h3>
+<div class="math">r = σ(W_ir·x + W_hr·h)       reset gate
+z = σ(W_iz·x + W_hz·h)       update gate
+n = tanh(W_in·x + r·(W_hn·h))
+h' = (1 − z)·n + z·h</div>
+<p>A GRU is an LSTM with the cell state folded into h, and three gates instead of four. It usually performs about the same as an LSTM, with fewer parameters.</p>
+
+<h2 id="loop">Under the hood: backpropagation through time</h2>
+<p>There is no special "BPTT algorithm" in MyTorcha. <code>LSTM.forward</code> is a Python <code>for</code> loop that calls the cell T times. That builds one long graph, T copies of the cell sharing the same weights, and the ordinary <code>backward()</code> walks it in reverse. Because the weights are shared, each one collects a gradient from every time step: <code>+=</code> again, just like <code>x * x</code> in chapter 1. One optimisation: <code>x @ W_ihᵀ</code> doesn't depend on h, so it's computed for all T steps in a single matmul before the loop. Only <code>h @ W_hhᵀ</code> is truly sequential.</p>
+<p>You can also drive a cell yourself:</p>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn
+
+x = mt.randn(4, 7, 10)
+cell = nn.LSTMCell(10, 32)
+state = None                       # None = start from zeros
+for t in range(7):
+    state = cell(x[:, t], state)   # one time step: (N, 10) -&gt; (h, c)
+h, c = state
+print(h.shape, c.shape)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>(4, 32) (4, 32)</code></pre></div>
+<h2 id="clipping">Exploding gradients and truncated BPTT</h2>
+<p>Two habits keep recurrent training stable:</p>
+<ol>
+  <li><strong>Clip the gradient norm</strong> every step: <code>optim.clip_grad_norm_(model.parameters(), 1.0)</code>, or <code>Trainer(..., clip_grad=1.0)</code>. One bad batch can otherwise produce a gradient a million times too large and wipe out the weights.</li>
+  <li><strong>Truncate</strong> long sequences. Feed the sequence in chunks, keep the hidden state's <em>value</em> between chunks, but cut the graph with <code>nn.detach_state</code> so <code>backward()</code> only goes back one chunk:</li>
+</ol>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn, optim
+
+lstm, head = nn.LSTM(10, 32), nn.Linear(32, 1)
+opt = optim.Adam(lstm.parameters() + head.parameters(), lr=1e-3)
+state = None
+for chunk in range(3):                       # e.g. three slices of one long stream
+    xb, yb = mt.randn(4, 5, 10), mt.randn(4, 5, 1)
+    out, state = lstm(xb, state)             # continue from the previous chunk's memory
+    loss = nn.MSELoss()(head(out), yb)
+    opt.zero_grad()
+    loss.backward()                          # ...but only backprop through this chunk
+    optim.clip_grad_norm_(opt.params, 1.0)
+    opt.step()
+    state = nn.detach_state(state)           # keep the values, drop the history
+print(state[0].requires_grad, state[0].shape)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>False (1, 4, 32)</code></pre></div>
+<h2 id="sine">Example: forecasting a sine wave</h2>
+<p><code>examples/04_sine_rnn_lstm_gru.py</code> predicts the next value of noisy sine waves (256 sequences of 30 steps) with each cell type: 32 hidden units, Adam at lr 10⁻², clipping at 1.0, 15 epochs. Baseline first: just predict "the next value equals the current one".</p>
+<div class="code"><pre><code class="lang-python">class Forecaster(nn.Module):
+    def __init__(self, cell):
+        self.rnn = cell(1, 32)          # (N, T, 1) -&gt; (N, T, 32)
+        self.head = nn.Linear(32, 1)    # one prediction per time step
+
+    def forward(self, x):
+        out, _ = self.rnn(x)
+        return self.head(out)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>baseline (copy last value) MSE: 0.03605
+RNN   params  1153 | final MSE 0.00835 | 1.1s
+LSTM  params  4513 | final MSE 0.00504 | 3.3s
+GRU   params  3393 | final MSE 0.00495 | 5.6s</code></pre></div>
+<p>All three beat the baseline by 4–7×. On sequences this short the plain RNN does fine. The gates pay off as sequences get longer.</p>
+
+<h2 id="char">Example: a character-level LSTM that writes</h2>
+<p><code>examples/05_char_lstm.py</code> is a tiny homage to Karpathy's "The Unreasonable Effectiveness of Recurrent Neural Networks". It uses an <code>Embedding</code> for characters, an LSTM with 128 units, and a <code>Linear</code> layer back to the 25-character vocabulary: 86,969 parameters in total. It's trained on a few sentences about this very framework, in 48-character windows. Because <code>CrossEntropyLoss</code> takes classes on the last axis, the <code>(N, T, vocab)</code> logits go straight in.</p>
+<div class="code"><pre><code class="lang-python">class CharLSTM(nn.Module):
+    def __init__(self, vocab, emb=32, hidden=128):
+        self.emb = nn.Embedding(vocab, emb)
+        self.lstm = nn.LSTM(emb, hidden)
+        self.head = nn.Linear(hidden, vocab)
+
+    def forward(self, ids, state=None):
+        out, state = self.lstm(self.emb(ids), state)
+        return self.head(out), state</code></pre></div>
+<p>To generate text, it feeds one character at a time and carries the <code>state</code> forward, sampling from <code>softmax(logits / temperature)</code>. Here's what it wrote during training:</p>
+<div class="code output"><span class="label">output</span><pre><code>step   0 | loss 3.230 | 'the dbveclgk stmap,sed d ahylb.kdy.a,,p  wa.mbcsiswrcrcis.zdalga'
+step 100 | loss 0.160 | 'the chain rule walks that memory backwards. every weight gets it'
+step 200 | loss 0.081 | 'the details. i do not learn things until i build them. a tensor '
+step 300 | loss 0.071 | 'the details. i do not learn things until i build them. a tensor '
+
+final sample:
+every weight gets its own gradient, every optimizer keeps its own state. the deal is in the details. i do not learn things unt</code></pre></div>
+<p>It goes from keyboard-mashing to quoting its training text, and it even picked up our motto. To be clear, this is <em>memorisation</em> of a tiny text, not creativity. Feed it a bigger corpus and wait longer for the creative part, Inshallah.</p>
+
+<h2 id="try">Try it</h2>
+<details class="try"><summary>1. <code>nn.LSTM(10, 32)</code>: what's the shape of <code>cells[0].weight_ih</code>, and why?</summary>
+<div class="answer"><p><strong>(128, 10)</strong>. Four gates × 32 hidden units, stacked so one matmul computes them all. A GRU has 3·32 = 96 rows, and an RNN has 32.</p></div></details>
+<details class="try"><summary>2. An LSTM's forget gate outputs f ≈ 0 at some step. What happens to the gradient flowing back along c past that step?</summary>
+<div class="answer"><p>It's cut to (almost) zero: c' = f·c + i·g, so dc'/dc = f ≈ 0. The LSTM <em>chose</em> to forget, and the gradient respects that. With f ≈ 1 it passes through almost untouched.</p></div></details>
+<details class="try"><summary>3. You forget <code>detach_state</code> in the chunked loop. What goes wrong?</summary>
+<div class="answer"><p>The graph keeps growing chunk after chunk, so memory and backward time grow without limit. Worse, the second <code>backward()</code> re-traverses earlier chunks whose gradients were already applied.</p></div></details>
+
+<nav class="pager" aria-label="Chapter navigation"><a class="prev" href="05-cnn.html" rel="prev"><span>← Previous</span>Convolutional networks</a><a class="next" href="07-attention.html" rel="next"><span>Next →</span>Attention and Transformers</a></nav>
+<p class="foot">MyTorcha by <a href="https://github.com/benisalla">Ismail Ben Alla</a>. MIT licensed. The deal is in the details.</p>
+</article>
+</main>
+</div>
+</body>
+</html>

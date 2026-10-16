@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chapter 1 · Autograd with single numbers · MyTorcha</title>
+<meta name="description" content="Build backpropagation by hand with MyTorcha&#x27;s scalar Node engine: computation graphs, the chain rule, topological sort, and an interactive graph.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="24" height="24">MyTorcha</a>
+  <button type="button" class="menu-btn" aria-controls="sidebar" aria-expanded="false">Chapters</button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Chapters">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="28" height="28">MyTorcha</a>
+  <p class="tagline">A baby deep learning framework, built from scratch so nothing is magic.</p>
+  <ol>
+<li><a href="index.html"><span class="num">·</span>Start here</a></li>
+<li><a href="01-autograd.html" aria-current="page"><span class="num">01</span>Autograd with single numbers</a></li>
+<li><a href="02-tensors.html"><span class="num">02</span>Tensors</a></li>
+<li><a href="03-modules.html"><span class="num">03</span>Modules and layers</a></li>
+<li><a href="04-training.html"><span class="num">04</span>Losses, optimizers, training</a></li>
+<li><a href="05-cnn.html"><span class="num">05</span>Convolutional networks</a></li>
+<li><a href="06-rnn.html"><span class="num">06</span>RNN, LSTM, GRU</a></li>
+<li><a href="07-attention.html"><span class="num">07</span>Attention and Transformers</a></li>
+<li><a href="reference.html"><span class="num">API</span>API reference</a></li>
+  </ol>
+  <p class="side-foot"><a href="https://github.com/benisalla/MyTorcha">Source on GitHub</a></p>
+</nav>
+<main id="main">
+<article class="content">
+<p class="kicker">Chapter 1</p>
+<h1>Autograd with single numbers</h1>
+<p class="lead">Before tensors, before layers, there is one idea: a number that remembers how it was made. Get this chapter and the rest of the framework is just bookkeeping.</p>
+
+<h2 id="node">A number with a memory</h2>
+<p>A <code>Node</code> from <code>mytorcha.scalar</code> stores four things:</p>
+<ul>
+  <li><code>data</code>: its value;</li>
+  <li><code>grad</code>: how much the final output changes if you nudge this node (filled in by <code>backward()</code>);</li>
+  <li><code>_prev</code>: the nodes it was computed from;</li>
+  <li><code>_backward</code>: a tiny function that pushes <code>grad</code> into those inputs.</li>
+</ul>
+<p>Every arithmetic operation creates a new node and wires it to its inputs. So writing an ordinary formula quietly builds a <strong>directed acyclic graph</strong> (DAG) of the computation:</p>
+<div class="code"><pre><code class="lang-python">from mytorcha.scalar import Node
+
+x = Node(2.0)
+y = x * x + x.log()
+y.backward()
+print(y.data, x.grad)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>4.693147180559945 4.5</code></pre></div>
+<p>Check it by hand: y = x² + log x, so dy/dx = 2x + 1/x = 4 + 0.5 = <strong>4.5</strong>. The framework did the calculus for us, by following the graph.</p>
+
+<h2 id="chain-rule">The chain rule, one node at a time</h2>
+<p>Each operation only knows its <em>local</em> derivative. Multiplication knows that d(a·b)/da = b. Log knows that d(log x)/dx = 1/x. The chain rule says the gradient of the final output with respect to any node is:</p>
+<div class="math">node.grad  =  Σ over every use of the node:   (local derivative) × (grad of the result)</div>
+<p>Here's multiplication from <code>src/mytorcha/scalar.py</code>. The whole engine is variations on this:</p>
+<div class="code"><pre><code class="lang-python">def __mul__(self, other):
+    other = other if isinstance(other, Node) else Node(other)
+    out = Node(self.data * other.data, (self, other), "*")
+
+    def _backward():
+        self.grad += other.data * out.grad    # d(a·b)/da = b
+        other.grad += self.data * out.grad    # d(a·b)/db = a
+
+    out._backward = _backward
+    return out</code></pre></div>
+<p>Note the <code>+=</code>. In <code>x * x</code>, the node <code>x</code> is used twice, so it collects gradient twice: 2 + 2 = 4. That's the "sum over every use" in the formula. With <code>=</code> instead of <code>+=</code>, any reused value would get half its gradient.</p>
+
+<h2 id="topo">Order matters: the topological sort</h2>
+<p>A node can only push its gradient back once it has received <em>all</em> of its own gradient. So <code>backward()</code> first lists the nodes so that every node comes after its inputs (a topological order), sets the output's grad to 1, and walks that list in reverse:</p>
+<div class="code"><pre><code class="lang-python">from mytorcha.scalar import Node
+
+x = Node(2.0, label="x")
+a = x * x
+b = x.log()
+y = a + b
+print([n._op or n.label for n in y.topo()])
+y.backward()
+print(a.grad, b.grad, x.grad)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>['x', 'log', '*', '+']
+1.0 1.0 4.5</code></pre></div>
+<p>Inputs come first and the output last. Walking in reverse, <code>+</code> hands 1.0 to both <code>a</code> and <code>b</code>, then <code>*</code> and <code>log</code> each pour their share into <code>x</code>: 2·2·1 + (1/2)·1 = 4.5.</p>
+<div class="note"><p><strong>Why iterative?</strong> Version 1 sorted the graph with a recursive function. One neuron with 784 inputs is already a chain of about 785 additions, and a couple of layers deeper you hit Python's recursion limit (1000) and crash. The new <code>topo()</code> uses an explicit stack, and a test backpropagates through a 5,000-node chain to keep it that way.</p></div>
+
+<h2 id="identity">Two nodes with the same value are still two nodes</h2>
+<p>Version 1 overrode <code>__eq__</code> and <code>__hash__</code> to compare nodes by <em>value</em>. That sounds harmless until <code>backward()</code> keeps a <code>visited</code> set:</p>
+<div class="code"><pre><code class="lang-python">from mytorcha.scalar import Node
+
+a, b = Node(3.0), Node(3.0)
+print(a == b, len({a, b}))</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>False 2</code></pre></div>
+<p>In v1 this printed <code>True 1</code>: the two weights collapsed into one set entry, the second was treated as already visited, and its part of the graph never got a gradient. Worse, the hash also depended on the gradient, which changes during backprop. Now nodes use plain identity: same object means same node, and that's the only rule.</p>
+
+<h2 id="widget">Play with a graph</h2>
+<p>This is a single neuron with one input. Its output a = tanh(w·x + b) is compared with a target t, and the loss is L = (a − t)². Move the sliders: each box shows its value and its gradient dL/d(node), computed in your browser by the same forward/backward recipe. Then press <strong>Take a gradient step</strong>, which runs <code>w -= lr * w.grad</code> and <code>b -= lr * b.grad</code>, and watch the loss shrink.</p>
+<div class="widget" data-widget="graph">
+  <h4>Neuron: L = (tanh(w·x + b) − t)²</h4>
+  <p class="noscript">This interactive graph needs JavaScript. The text above explains the same computation.</p>
+  <div hidden>
+    <svg class="graph-svg" viewBox="-30 0 900 290" role="img" aria-label="Computation graph showing the value and gradient of every node"></svg>
+    <div class="controls">
+      <label for="g-x">x (input) <output for="g-x"></output><input id="g-x" name="x" type="range" min="-2" max="2" step="0.01" value="1.00"></label>
+      <label for="g-w">w (weight) <output for="g-w"></output><input id="g-w" name="w" type="range" min="-3" max="3" step="0.01" value="0.50"></label>
+      <label for="g-b">b (bias) <output for="g-b"></output><input id="g-b" name="b" type="range" min="-3" max="3" step="0.01" value="0.00"></label>
+      <label for="g-t">t (target) <output for="g-t"></output><input id="g-t" name="t" type="range" min="-1" max="1" step="0.01" value="0.80"></label>
+    </div>
+    <div class="btns">
+      <button type="button" class="btn primary" data-act="step">Take a gradient step</button>
+      <label class="btn" for="g-lr">lr <select id="g-lr" name="lr"><option>0.1</option><option selected>0.5</option><option>2</option></select></label>
+      <button type="button" class="btn" data-act="reset">Reset</button>
+    </div>
+    <p class="readout" aria-live="polite"></p>
+  </div>
+</div>
+<p>Things to notice while you play:</p>
+<ul>
+  <li>The grad of <code>w</code> is always <code>x</code> times the grad of <code>w·x</code>. Set x = 0 and w stops learning. That's why inputs are normalised.</li>
+  <li>Push b to ±3 and tanh saturates: 1 − a² ≈ 0, so every gradient behind <code>tanh</code> goes to zero. That's a "dead" neuron, and it's why weight init matters (chapter 3).</li>
+  <li>With lr = 2 the steps overshoot and bounce. Too large a learning rate is not "faster". It's wrong.</li>
+</ul>
+
+<h2 id="xor">Train a network with nothing but Nodes</h2>
+<p><code>mytorcha.scalar</code> also has the original <code>Neuron</code>, <code>Layer</code> and <code>MLP</code>. One fix matters a lot: the <strong>last layer is now linear</strong>. v1 applied ReLU to the output, which clips negative scores to zero before the loss even sees them. XOR is the classic test, because no single line separates it:</p>
+<div class="code"><pre><code class="lang-python">import random
+from mytorcha.scalar import MLP, sum_nodes
+
+random.seed(0)
+X, Y = [[0, 0], [0, 1], [1, 0], [1, 1]], [0, 1, 1, 0]
+model = MLP(2, [8], 1, act="tanh")
+print("parameters:", len(model.parameters()))
+
+for step in range(301):
+    loss = sum_nodes([(model(x)[0] - y) ** 2 for x, y in zip(X, Y)])
+    model.zero_grad()       # gradients accumulate (+=), so clear them first
+    loss.backward()
+    for p in model.parameters():
+        p.data -= 0.05 * p.grad
+    if step % 50 == 0:
+        print(f"step {step:3d} | loss {loss.data:.4f}")
+
+print("predictions:", [round(model(x)[0].data, 3) for x in X], "targets:", Y)
+print("graph size for one forward pass:", len(model(X[0])[0].topo()), "nodes")</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>parameters: 33
+step   0 | loss 1.7710
+step  50 | loss 0.7410
+step 100 | loss 0.2354
+step 150 | loss 0.0160
+step 200 | loss 0.0005
+step 250 | loss 0.0000
+step 300 | loss 0.0000
+predictions: [0.0, 1.0, 1.0, 0.0] targets: [0, 1, 1, 0]
+graph size for one forward pass: 106 nodes</code></pre></div>
+<p>This is <code>examples/01_xor_scalar.py</code>. Thirty-three parameters make a 106-node graph per sample. Scale that to a 784-pixel image and one 10-class layer makes <strong>31,427 nodes</strong> per image. The idea is perfect, the bookkeeping is too slow, and that's exactly why <a href="02-tensors.html">chapter 2</a> exists.</p>
+<div class="note"><p><strong>See the graph.</strong> With <code>pip install graphviz</code> (and the Graphviz binaries), <code>mytorcha.scalar.draw(loss)</code> returns a picture of every node with its value and gradient. It's the closest thing to an X-ray of backprop.</p></div>
+
+<h2 id="try">Try it</h2>
+<p>Predict first, then open the answer. Run it if you don't believe it (you shouldn't, that's the spirit).</p>
+<details class="try"><summary>1. <code>x = Node(3.0); (x * x * x).backward()</code>. What is <code>x.grad</code>?</summary>
+<div class="answer"><p><strong>27.0</strong>. d(x³)/dx = 3x² = 27. The graph is two multiplications. <code>x</code> appears three times, and the <code>+=</code> collects all three contributions.</p></div></details>
+<details class="try"><summary>2. <code>x = Node(-1.0); (x.relu() * 5).backward()</code>. What is <code>x.grad</code>?</summary>
+<div class="answer"><p><strong>0.0</strong>. ReLU's derivative is 0 for negative inputs, so the 5 never reaches <code>x</code>. A neuron stuck on the negative side gets no gradient at all: the "dying ReLU".</p></div></details>
+<details class="try"><summary>3. <code>x = Node(0.5); (x * 2).tanh().backward()</code>. Is <code>x.grad</code> bigger or smaller than 2?</summary>
+<div class="answer"><p><strong>Smaller: 0.8399</strong>. It equals 2 · (1 − tanh(1)²). The chain rule multiplies the local derivatives, and tanh's is always ≤ 1.</p></div></details>
+<details class="try"><summary>4. Why does <code>backward()</code> set the output's grad to 1 and not 0?</summary>
+<div class="answer"><p>Because the output's gradient with respect to itself is dy/dy = 1. Every other gradient is that 1 multiplied by local derivatives along the way. Start from 0 and everything stays 0. (In v1 the losses had to set it by hand, and cross-entropy got around it with a manual hack on the logits.)</p></div></details>
+
+<nav class="pager" aria-label="Chapter navigation"><a class="prev" href="index.html" rel="prev"><span>← Previous</span>Start here</a><a class="next" href="02-tensors.html" rel="next"><span>Next →</span>Tensors</a></nav>
+<p class="foot">MyTorcha by <a href="https://github.com/benisalla">Ismail Ben Alla</a>. MIT licensed. The deal is in the details.</p>
+</article>
+</main>
+</div>
+</body>
+</html>

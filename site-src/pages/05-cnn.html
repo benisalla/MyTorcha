@@ -1,0 +1,185 @@
+<p class="kicker">Chapter 5</p>
+<h1>Convolutional networks</h1>
+<p class="lead">An MLP treats an image as 784 unrelated numbers. A convolution slides one small set of weights across the image, so a pattern it learns in one corner works everywhere. On our digits, that buys 11× fewer parameters <em>and</em> better accuracy.</p>
+
+<h2 id="conv">What Conv2d computes</h2>
+<p>A kernel of shape <code>(C_in, kh, kw)</code> is placed on every position of the input. At each position, the window is multiplied element-wise by the kernel and summed. Each of the <code>C_out</code> kernels produces one output channel. (Mathematically this is cross-correlation, since the kernel isn't flipped. Every framework calls it convolution anyway, and so do we.)</p>
+```python
+import numpy as np
+import mytorcha as mt
+import mytorcha.functional as F
+
+img = mt.Tensor(np.array([[[[0, 0, 9, 9], [0, 0, 9, 9], [0, 0, 9, 9]]]], dtype=np.float32))  # (N, C, H, W)
+k = mt.Tensor(np.array([[[[-1, 1]]]], dtype=np.float32))                                     # a 1×2 "right minus left" kernel
+print(F.conv2d(img, k).data[0, 0])
+```
+```output
+[[0. 9. 0.]
+ [0. 9. 0.]
+ [0. 9. 0.]]
+```
+<p>The kernel lights up exactly where dark turns bright: it's a vertical-edge detector. A CNN <em>learns</em> kernels like this one from data instead of having them hand-written.</p>
+
+<h3>Stride, padding, dilation and the output size</h3>
+```math
+H_out = ⌊ (H + 2·padding − dilation·(k − 1) − 1) / stride ⌋ + 1
+```
+```python
+import mytorcha as mt
+from mytorcha import nn
+
+mt.manual_seed(0)
+x = mt.randn(4, 1, 28, 28)
+conv = nn.Conv2d(1, 8, kernel_size=3, stride=2, padding=1)
+print(conv(x).shape, conv.weight.shape)
+print(nn.Conv2d(1, 8, 3)(x).shape, nn.Conv2d(1, 8, 3, padding=1)(x).shape, nn.Conv2d(1, 8, 3, dilation=2)(x).shape)
+```
+```output
+(4, 8, 14, 14) (8, 1, 3, 3)
+(4, 8, 26, 26) (4, 8, 28, 28) (4, 8, 24, 24)
+```
+<ul>
+  <li><strong>padding</strong> adds a border of zeros. <code>padding=1</code> with a 3×3 kernel keeps the size ("same" convolution).</li>
+  <li><strong>stride</strong> jumps several pixels at a time. <code>stride=2</code> halves the resolution.</li>
+  <li><strong>dilation</strong> spreads the kernel's taps apart. A 3×3 kernel with dilation 2 sees a 5×5 area with only 9 weights.</li>
+</ul>
+<p>The layout is <code>NCHW</code> like PyTorch, the weight is <code>(C_out, C_in, kh, kw)</code>, and results match <code>torch.nn.functional.conv2d</code> to 10⁻¹⁰ in the tests. <code>Conv1d</code> works on <code>(N, C, L)</code> sequences; it's <code>conv2d</code> with a height of 1.</p>
+
+<h2 id="widget">See a convolution happen</h2>
+<p>A 7×7 image of a "7", with a 3×3 kernel. Hover over (or tab to) an output cell to highlight its receptive field: the input pixels that produced it. The line underneath shows the exact sum. Try the presets, and switch stride and padding to see the output shrink or grow, as the formula above predicts.</p>
+<div class="widget" data-widget="conv">
+  <h4>Convolution visualiser</h4>
+  <p class="noscript">This visualiser needs JavaScript. The formula and the example above show the same computation.</p>
+  <div hidden>
+    <div class="controls">
+      <label for="c-kernel">kernel <select id="c-kernel" name="kernel" class="btn">
+        <option value="vertical">vertical edge</option><option value="horizontal">horizontal edge</option>
+        <option value="blur">blur (box)</option><option value="sharpen">sharpen</option><option value="identity">identity</option></select></label>
+      <label for="c-stride">stride <select id="c-stride" name="stride" class="btn"><option>1</option><option>2</option></select></label>
+      <label for="c-pad">padding <select id="c-pad" name="padding" class="btn"><option>0</option><option>1</option></select></label>
+    </div>
+    <div class="conv-grids">
+      <figure><figcaption>input (dashed = zero padding)</figcaption><div class="grid g-in"></div></figure>
+      <figure><figcaption>kernel</figcaption><div class="grid g-k"></div></figure>
+      <figure><figcaption>output: hover, tap or tab</figcaption><div class="grid g-out"></div></figure>
+    </div>
+    <div class="btns"><button type="button" class="btn" data-act="next">Slide to next position</button></div>
+    <p class="conv-calc" aria-live="polite"></p>
+    <p class="conv-size readout"></p>
+  </div>
+</div>
+
+<h2 id="im2col">How it's computed: im2col</h2>
+<p>A naive convolution is six nested loops, which is hopeless in Python. The classic trick is called <strong>im2col</strong> (image to columns):</p>
+<ol>
+  <li>Take a zero-copy <em>strided view</em> of every receptive field (<code>numpy.lib.stride_tricks.as_strided</code>). The result has shape <code>(N, C, H_out, W_out, kh, kw)</code> and no data is copied yet.</li>
+  <li>Lay those windows out once as a matrix <code>cols</code> of shape <code>(N·H_out·W_out, C·kh·kw)</code>: one row per output pixel.</li>
+  <li>The convolution is now <strong>one matrix multiply</strong>: <code>cols @ W.reshape(C_out, −1).T</code>.</li>
+</ol>
+<p>The backward pass is two more matrix multiplies, plus one new idea:</p>
+```math
+dL/dW    = gᵀ · cols                 (which windows made this kernel useful?)
+dL/dcols = g · W                     (how should each window have changed?)
+dL/dx    = col2im(dL/dcols)          (add every window's gradient back onto its pixels)
+```
+<p><strong>col2im</strong> is where the chain rule shows up again. Windows overlap, so one pixel belongs to up to kh·kw windows, and it collects the gradient from <em>every one of them</em>: the same "sum over every use" as <code>x * x</code> in chapter 1. MyTorcha's <code>_scatter</code> does it with kh·kw strided additions.</p>
+<div class="note"><p><strong>A profiling story.</strong> The first version applied <code>tensordot</code> directly to the strided view. A training step on the digits CNN was slow, so instead of guessing, we timed each piece. The second conv's backward took <strong>582 ms</strong>. Making <code>cols</code> one contiguous matrix, so that NumPy hands it straight to BLAS, cut a CNN epoch from about 60 s to about 15 s. The accuracy curve stayed <em>identical</em> under the same seed, which doubles as a correctness check. Then a second surprise: a tiny 16×12544 by 12544×72 product took 345 ms with 8 BLAS threads and 3.3 ms with 1. The machine was overloaded by other training jobs, and multi-threaded OpenBLAS degrades badly under contention. If MyTorcha feels slow on a busy machine, try <code>OPENBLAS_NUM_THREADS=1 python your_script.py</code>.</p></div>
+
+<h2 id="pooling">Pooling</h2>
+```python
+import mytorcha as mt
+from mytorcha import nn
+
+h = mt.randn(4, 8, 14, 14)
+print(nn.MaxPool2d(2)(h).shape, nn.AvgPool2d(3, stride=1, padding=1)(h).shape, nn.AdaptiveAvgPool2d(1)(h).shape)
+```
+```output
+(4, 8, 7, 7) (4, 8, 14, 14) (4, 8, 1, 1)
+```
+<p>Max-pooling keeps the strongest response in each window, and its backward sends the gradient only to that winner:</p>
+```python
+import numpy as np
+import mytorcha as mt
+import mytorcha.functional as F
+
+t = mt.Tensor(np.array([[[[1., 3, 2, 0], [4, 2, 1, 1], [0, 1, 5, 6], [2, 2, 7, 1]]]]), requires_grad=True)
+out = F.max_pool2d(t, 2)
+out.sum().backward()
+print(out.data[0, 0])
+print(t.grad[0, 0])
+```
+```output
+[[4. 2.]
+ [2. 7.]]
+[[0. 0. 1. 0.]
+ [1. 0. 0. 0.]
+ [0. 0. 0. 0.]
+ [1. 0. 1. 0.]]
+```
+<p>Look at the bottom-left window <code>[[0, 1], [2, 2]]</code>: there's a tie, and max-pooling gives the gradient to the <em>first</em> winner, like PyTorch. Average pooling spreads it evenly instead (1/(kh·kw) to each pixel). <code>AdaptiveAvgPool2d(1)</code> is global average pooling: one number per channel, which is the usual way to end a modern CNN.</p>
+
+<h2 id="batchnorm">BatchNorm2d</h2>
+<p>While training, <code>BatchNorm2d(C)</code> normalises every channel to mean 0 and variance 1 over the batch and spatial axes <code>(N, H, W)</code>. Then it applies a learned scale <code>weight</code> and shift <code>bias</code>. It also keeps running averages of the mean and variance (momentum 0.1, unbiased variance, exactly like PyTorch), and in <code>eval()</code> mode it uses those instead of batch statistics. That's why <code>model.eval()</code> matters (chapter 3). In practice it makes CNNs far less sensitive to the learning rate and the init. For small batches or sequences, use <code>GroupNorm</code> or <code>LayerNorm</code>, which normalise each sample independently.</p>
+
+<h2 id="digits">MLP vs CNN on handwritten digits</h2>
+<p>The repository ships the Kaggle "Digit Recognizer" CSV (<code>data/train.csv</code>: 42,000 images of 28×28). <code>examples/03_digits_mlp_vs_cnn.py</code> trains both models on the first 10,000 images and validates on the next 2,000. That's the large part for training; v1 had the split backwards (bug #7).</p>
+```python
+import mytorcha as mt
+from mytorcha import nn
+
+mt.manual_seed(0)
+cnn = nn.Sequential(
+    nn.Conv2d(1, 8, 3, padding=1), nn.BatchNorm2d(8), nn.ReLU(), nn.MaxPool2d(2),    # 8 × 14 × 14
+    nn.Conv2d(8, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2),  # 16 × 7 × 7
+    nn.Flatten(), nn.Dropout(0.2), nn.Linear(16 * 7 * 7, 10),
+)
+print(cnn.num_parameters())
+print(cnn(mt.randn(4, 1, 28, 28)).shape)
+```
+```output
+9146
+(4, 10)
+```
+<p>Both models are trained with Adam (lr 2·10⁻³), cosine annealing, batch size 64 and 3 epochs:</p>
+```bash
+OPENBLAS_NUM_THREADS=1 python examples/03_digits_mlp_vs_cnn.py
+```
+```output
+loaded (12000, 1, 28, 28) in 0.8s
+
+MLP: 101,770 parameters
+epoch 1 | train_loss 0.5671 | val_loss 0.3140 | val_acc 0.9020 | time 1.0019
+epoch 2 | train_loss 0.2519 | val_loss 0.2536 | val_acc 0.9230 | time 1.2502
+epoch 3 | train_loss 0.1899 | val_loss 0.2258 | val_acc 0.9365 | time 0.6589
+
+CNN: 9,146 parameters
+epoch 1 | train_loss 0.4299 | val_loss 0.1765 | val_acc 0.9435 | time 15.8534
+epoch 2 | train_loss 0.1340 | val_loss 0.1054 | val_acc 0.9670 | time 14.3229
+epoch 3 | train_loss 0.0951 | val_loss 0.0910 | val_acc 0.9710 | time 17.3488
+```
+<p><strong>97.1% vs 93.65%, with 9,146 vs 101,770 parameters.</strong> The CNN's advantage is built-in assumptions: nearby pixels matter together (local kernels), and a stroke is a stroke wherever it appears (shared weights). It's slower per epoch because each weight is used thousands of times, but every one of those uses is real work. The script saves the trained CNN to <code>checkpoints_digits_cnn.npz</code>.</p>
+
+<h2 id="transpose">ConvTranspose2d: going back up</h2>
+```python
+import mytorcha as mt
+from mytorcha import nn
+
+x = mt.randn(4, 1, 28, 28)
+down = nn.Conv2d(1, 8, 3, stride=2, padding=1)
+up = nn.ConvTranspose2d(8, 1, 3, stride=2, padding=1, output_padding=1)
+print(down(x).shape, up(down(x)).shape)
+```
+```output
+(4, 8, 14, 14) (4, 1, 28, 28)
+```
+<p>A transposed convolution ("deconvolution") is the <em>backward pass of a convolution with respect to its input, run forwards</em>. Each input pixel stamps a weighted copy of the kernel onto a larger output, and overlapping stamps add up. In MyTorcha it reuses the same <code>_windows</code> and <code>_scatter</code> helpers as <code>conv2d</code>, just swapped. It's the upsampling layer in autoencoders, U-Nets and GAN generators. Its weight is <code>(C_in, C_out, kh, kw)</code>, like PyTorch.</p>
+
+<h2 id="try">Try it</h2>
+<details class="try"><summary>1. A 32×32 input, kernel 5, stride 1, padding 0. What's the output size? And with padding 2?</summary>
+<div class="answer"><p><strong>28×28</strong>, then <strong>32×32</strong>: (32 − 5)/1 + 1 = 28, and (32 + 4 − 5)/1 + 1 = 32.</p></div></details>
+<details class="try"><summary>2. How many parameters does <code>nn.Conv2d(3, 64, 3)</code> have, and does it depend on the image size?</summary>
+<div class="answer"><p><strong>1,792</strong> = 64·3·3·3 + 64. The image size doesn't matter, because the same weights slide everywhere. A <code>Linear</code> layer on a 224×224×3 image would need 150,528 weights <em>per output unit</em>.</p></div></details>
+<details class="try"><summary>3. In the visualiser, choose the identity kernel with padding 1. What is the output?</summary>
+<div class="answer"><p>The input itself. The kernel copies the centre pixel, and padding 1 keeps the size. It's a good sanity check that you understand which pixel is the "centre".</p></div></details>
+<details class="try"><summary>4. Why does the CNN take longer per epoch than the MLP, despite having 11× fewer parameters?</summary>
+<div class="answer"><p>Compute scales with how often weights are <em>used</em>, not how many there are. Each 3×3 kernel is applied at 28·28 = 784 positions per image. Parameter count measures memory; multiply–adds measure time.</p></div></details>

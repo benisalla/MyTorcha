@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API reference · MyTorcha</title>
+<meta name="description" content="Every public class and function in MyTorcha with its exact signature.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="24" height="24">MyTorcha</a>
+  <button type="button" class="menu-btn" aria-controls="sidebar" aria-expanded="false">Chapters</button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Chapters">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="28" height="28">MyTorcha</a>
+  <p class="tagline">A baby deep learning framework, built from scratch so nothing is magic.</p>
+  <ol>
+<li><a href="index.html"><span class="num">·</span>Start here</a></li>
+<li><a href="01-autograd.html"><span class="num">01</span>Autograd with single numbers</a></li>
+<li><a href="02-tensors.html"><span class="num">02</span>Tensors</a></li>
+<li><a href="03-modules.html"><span class="num">03</span>Modules and layers</a></li>
+<li><a href="04-training.html"><span class="num">04</span>Losses, optimizers, training</a></li>
+<li><a href="05-cnn.html"><span class="num">05</span>Convolutional networks</a></li>
+<li><a href="06-rnn.html"><span class="num">06</span>RNN, LSTM, GRU</a></li>
+<li><a href="07-attention.html"><span class="num">07</span>Attention and Transformers</a></li>
+<li><a href="reference.html" aria-current="page"><span class="num">API</span>API reference</a></li>
+  </ol>
+  <p class="side-foot"><a href="https://github.com/benisalla/MyTorcha">Source on GitHub</a></p>
+</nav>
+<main id="main">
+<article class="content">
+<p class="kicker">Reference</p>
+<h1>API reference</h1>
+<p class="lead">Every public class and function, with its exact signature (taken from the code with <code>inspect.signature</code>).</p>
+<p>Jump to: <a href="#top">mytorcha</a> · <a href="#tensor">Tensor</a> · <a href="#data">data &amp; Trainer</a> · <a href="#functional">functional</a> · <a href="#nn">nn</a> · <a href="#module">Module</a> · <a href="#optim">optim</a> · <a href="#init">init</a> · <a href="#datasets">datasets</a> · <a href="#gradcheck">gradcheck</a> · <a href="#scalar">scalar</a></p>
+<h2 id="top">mytorcha</h2>
+<p>Import with <code>import mytorcha as mt</code>.</p>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>tensor</code><div class="sig">(data, requires_grad=False, dtype=None)</div></td><td>Create a Tensor (same as the Tensor constructor).</td></tr>
+<tr><td><code>zeros</code><div class="sig">(*shape, requires_grad=False)</div></td><td>float32 tensor of zeros.</td></tr>
+<tr><td><code>ones</code><div class="sig">(*shape, requires_grad=False)</div></td><td>float32 tensor of ones.</td></tr>
+<tr><td><code>randn</code><div class="sig">(*shape, requires_grad=False, rng=None)</div></td><td>float32 tensor of standard-normal samples (global generator unless rng is given).</td></tr>
+<tr><td><code>arange</code><div class="sig">(*args)</div></td><td>Like np.arange, as a Tensor.</td></tr>
+<tr><td><code>concat</code><div class="sig">(tensors, axis=0)</div></td><td>Join tensors along an existing axis (differentiable).</td></tr>
+<tr><td><code>cat</code><div class="sig">(tensors, axis=0)</div></td><td>Alias of concat.</td></tr>
+<tr><td><code>stack</code><div class="sig">(tensors, axis=0)</div></td><td>Join tensors along a new axis (differentiable).</td></tr>
+<tr><td><code>where</code><div class="sig">(cond, a, b)</div></td><td>Pick from a where cond is True, else from b (differentiable in a and b).</td></tr>
+<tr><td><code>no_grad</code><div class="sig">()</div></td><td>Run code without recording a graph (evaluation, optimizer updates).</td></tr>
+<tr><td><code>is_grad_enabled</code><div class="sig">()</div></td><td>False inside a no_grad() block.</td></tr>
+<tr><td><code>manual_seed</code><div class="sig">(seed)</div></td><td>Seed the global generator used by init, randn, dropout and DataLoader shuffling.</td></tr>
+</tbody></table></div>
+<h2 id="tensor">Tensor</h2>
+<p>Properties: <code>shape</code>, <code>ndim</code>, <code>size</code>, <code>dtype</code>, <code>is_float</code>, <code>T</code>, <code>data</code> (the ndarray), <code>grad</code>, <code>requires_grad</code>. Operators <code>+ - * / ** @</code>, unary <code>-</code> and comparisons (non-differentiable, boolean) are supported, also with NumPy arrays or numbers on either side.</p>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>Tensor</code><div class="sig">(data, requires_grad=False, dtype=None, _prev=(), _op=&#x27;&#x27;)</div></td><td>n-dimensional array with autograd. Python floats become float32; NumPy arrays keep their dtype.</td></tr>
+<tr><td><code>Tensor.backward</code><div class="sig">(self, grad=None)</div></td><td>Backpropagate from this tensor; grad defaults to 1 for a scalar.</td></tr>
+<tr><td><code>Tensor.zero_grad</code><div class="sig">(self)</div></td><td>Set .grad to None.</td></tr>
+<tr><td><code>Tensor.detach</code><div class="sig">(self)</div></td><td>A new Tensor with the same data and no history.</td></tr>
+<tr><td><code>Tensor.numpy</code><div class="sig">(self)</div></td><td>The underlying ndarray.</td></tr>
+<tr><td><code>Tensor.item</code><div class="sig">(self)</div></td><td>The value of a one-element tensor as a Python number.</td></tr>
+<tr><td><code>Tensor.astype</code><div class="sig">(self, dtype)</div></td><td>Cast to another dtype (differentiable).</td></tr>
+<tr><td><code>Tensor.argmax</code><div class="sig">(self, axis=None)</div></td><td>Index of the max (no gradient).</td></tr>
+<tr><td><code>Tensor.__matmul__</code><div class="sig">(self, other)</div></td><td>a @ b: matrix product, batched and broadcast like NumPy.</td></tr>
+<tr><td><code>Tensor.exp</code><div class="sig">(self)</div></td><td>Elementwise eˣ.</td></tr>
+<tr><td><code>Tensor.log</code><div class="sig">(self)</div></td><td>Elementwise natural log.</td></tr>
+<tr><td><code>Tensor.sqrt</code><div class="sig">(self)</div></td><td>Elementwise square root.</td></tr>
+<tr><td><code>Tensor.abs</code><div class="sig">(self)</div></td><td>Elementwise |x|.</td></tr>
+<tr><td><code>Tensor.clip</code><div class="sig">(self, lo=None, hi=None)</div></td><td>Clamp to [lo, hi]; zero gradient outside.</td></tr>
+<tr><td><code>Tensor.masked_fill</code><div class="sig">(self, mask, value)</div></td><td>Replace entries where `mask` is True by `value` (e.g. -inf in attention).</td></tr>
+<tr><td><code>Tensor.sum</code><div class="sig">(self, axis=None, keepdims=False)</div></td><td>Sum over axis (all axes by default).</td></tr>
+<tr><td><code>Tensor.mean</code><div class="sig">(self, axis=None, keepdims=False)</div></td><td>Mean over axis.</td></tr>
+<tr><td><code>Tensor.var</code><div class="sig">(self, axis=None, keepdims=False)</div></td><td>Biased variance (divides by N), as used by BatchNorm / LayerNorm.</td></tr>
+<tr><td><code>Tensor.max</code><div class="sig">(self, axis=None, keepdims=False)</div></td><td>Max over axis; gradient goes to the max (ties share it).</td></tr>
+<tr><td><code>Tensor.min</code><div class="sig">(self, axis=None, keepdims=False)</div></td><td>Min over axis.</td></tr>
+<tr><td><code>Tensor.reshape</code><div class="sig">(self, *shape)</div></td><td>New shape, same data.</td></tr>
+<tr><td><code>Tensor.view</code><div class="sig">(self, *shape)</div></td><td>Alias of reshape.</td></tr>
+<tr><td><code>Tensor.flatten</code><div class="sig">(self, start=1)</div></td><td>Flatten all axes from start on.</td></tr>
+<tr><td><code>Tensor.transpose</code><div class="sig">(self, *axes)</div></td><td>Permute axes (reverse them by default).</td></tr>
+<tr><td><code>Tensor.permute</code><div class="sig">(self, *axes)</div></td><td>Alias of transpose.</td></tr>
+<tr><td><code>Tensor.swapaxes</code><div class="sig">(self, a, b)</div></td><td>Swap two axes.</td></tr>
+<tr><td><code>Tensor.unsqueeze</code><div class="sig">(self, axis)</div></td><td>Insert an axis of size 1.</td></tr>
+<tr><td><code>Tensor.squeeze</code><div class="sig">(self, axis=None)</div></td><td>Remove axes of size 1.</td></tr>
+<tr><td><code>Tensor.__getitem__</code><div class="sig">(self, idx)</div></td><td>t[idx]: slicing and integer-array indexing; gradient scattered with np.add.at.</td></tr>
+<tr><td><code>Tensor.pad</code><div class="sig">(self, pad_width, value=0.0)</div></td><td>np.pad with a constant; pad_width like ((0,0),(0,0),(1,1),(1,1)).</td></tr>
+</tbody></table></div>
+<h2 id="data">Data and training</h2>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>Dataset</code><div class="sig">()</div></td><td>Subclass and implement __len__ and __getitem__(i) -&gt; tuple of arrays.</td></tr>
+<tr><td><code>TensorDataset</code><div class="sig">(*arrays)</div></td><td>Wrap arrays that share their first dimension: TensorDataset(X, y).</td></tr>
+<tr><td><code>DataLoader</code><div class="sig">(dataset, batch_size=32, shuffle=False, drop_last=False)</div></td><td>Yield mini-batches of Tensors: for xb, yb in DataLoader(ds, batch_size=64, shuffle=True).</td></tr>
+<tr><td><code>Trainer</code><div class="sig">(model, loss_fn, optimizer, scheduler=None, clip_grad=None, metric=&#x27;accuracy&#x27;)</div></td><td>A small training loop: fit, evaluate, predict.</td></tr>
+<tr><td><code>Trainer.train_epoch</code><div class="sig">(self, loader)</div></td><td>One pass over a loader; returns the mean training loss.</td></tr>
+<tr><td><code>Trainer.evaluate</code><div class="sig">(self, loader)</div></td><td>Average loss (and accuracy for classification) without building a graph.</td></tr>
+<tr><td><code>Trainer.fit</code><div class="sig">(self, train_loader, epochs=10, val_loader=None, verbose=True)</div></td><td>Train for epochs, optionally evaluating each epoch; returns history.</td></tr>
+<tr><td><code>Trainer.predict</code><div class="sig">(self, x, batch_size=256)</div></td><td>Model outputs as a NumPy array, in batches, under no_grad.</td></tr>
+</tbody></table></div>
+<h2 id="functional">mytorcha.functional</h2>
+<p>Stateless functions: <code>import mytorcha.functional as F</code>. Losses take <code>reduction="mean" | "sum" | "none"</code>; classification losses expect classes on the <strong>last</strong> axis.</p>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>F.identity</code><div class="sig">(x)</div></td><td>f(x) = x.</td></tr>
+<tr><td><code>F.linear_act</code><div class="sig">(x)</div></td><td>Alias of identity.</td></tr>
+<tr><td><code>F.relu</code><div class="sig">(x)</div></td><td>max(0, x).</td></tr>
+<tr><td><code>F.relu6</code><div class="sig">(x)</div></td><td>min(max(0, x), 6).</td></tr>
+<tr><td><code>F.leaky_relu</code><div class="sig">(x, negative_slope=0.01)</div></td><td>x if x &gt; 0 else negative_slope·x.</td></tr>
+<tr><td><code>F.elu</code><div class="sig">(x, alpha=1.0)</div></td><td>x if x &gt; 0 else alpha·(eˣ − 1).</td></tr>
+<tr><td><code>F.celu</code><div class="sig">(x, alpha=1.0)</div></td><td>x if x &gt; 0 else alpha·(e^(x/alpha) − 1).</td></tr>
+<tr><td><code>F.selu</code><div class="sig">(x)</div></td><td>Scaled ELU with self-normalising constants.</td></tr>
+<tr><td><code>F.sigmoid</code><div class="sig">(x)</div></td><td>1 / (1 + e⁻ˣ), computed without overflow.</td></tr>
+<tr><td><code>F.logsigmoid</code><div class="sig">(x)</div></td><td>log(sigmoid(x)), stable.</td></tr>
+<tr><td><code>F.hard_sigmoid</code><div class="sig">(x)</div></td><td>clip(x/6 + 1/2, 0, 1).</td></tr>
+<tr><td><code>F.tanh</code><div class="sig">(x)</div></td><td>Hyperbolic tangent.</td></tr>
+<tr><td><code>F.hardtanh</code><div class="sig">(x, lo=-1.0, hi=1.0)</div></td><td>clip(x, lo, hi).</td></tr>
+<tr><td><code>F.softplus</code><div class="sig">(x, beta=1.0)</div></td><td>log(1 + e^(βx)) / β, stable.</td></tr>
+<tr><td><code>F.softsign</code><div class="sig">(x)</div></td><td>x / (1 + |x|).</td></tr>
+<tr><td><code>F.silu</code><div class="sig">(x)</div></td><td>SiLU / swish: x · sigmoid(x).</td></tr>
+<tr><td><code>F.swish</code><div class="sig">(x)</div></td><td>SiLU / swish: x · sigmoid(x).</td></tr>
+<tr><td><code>F.hardswish</code><div class="sig">(x)</div></td><td>x·clip(x + 3, 0, 6) / 6.</td></tr>
+<tr><td><code>F.mish</code><div class="sig">(x)</div></td><td>x · tanh(softplus(x)).</td></tr>
+<tr><td><code>F.gelu</code><div class="sig">(x, approximate=&#x27;none&#x27;)</div></td><td>GELU: x · Φ(x). approximate=&quot;tanh&quot; uses the GPT-2 formula.</td></tr>
+<tr><td><code>F.arctan</code><div class="sig">(x)</div></td><td>arctan(x).</td></tr>
+<tr><td><code>F.prelu</code><div class="sig">(x, weight)</div></td><td>Leaky ReLU whose negative slope `weight` is learned (composed from primitives).</td></tr>
+<tr><td><code>F.softmax</code><div class="sig">(x, axis=-1)</div></td><td>Probabilities along axis (max-subtracted, stable).</td></tr>
+<tr><td><code>F.log_softmax</code><div class="sig">(x, axis=-1)</div></td><td>log of softmax along axis, stable.</td></tr>
+<tr><td><code>F.softmin</code><div class="sig">(x, axis=-1)</div></td><td>softmax(−x).</td></tr>
+<tr><td><code>F.get_activation</code><div class="sig">(name)</div></td><td>Look up an activation function by name (e.g. &#x27;gelu&#x27;).</td></tr>
+<tr><td><code>F.mse_loss</code><div class="sig">(pred, target, reduction=&#x27;mean&#x27;)</div></td><td>Mean squared error.</td></tr>
+<tr><td><code>F.l1_loss</code><div class="sig">(pred, target, reduction=&#x27;mean&#x27;)</div></td><td>Mean absolute error.</td></tr>
+<tr><td><code>F.huber_loss</code><div class="sig">(pred, target, delta=1.0, reduction=&#x27;mean&#x27;)</div></td><td>Quadratic near 0, linear far away: robust to outliers.</td></tr>
+<tr><td><code>F.smooth_l1_loss</code><div class="sig">(pred, target, beta=1.0, reduction=&#x27;mean&#x27;)</div></td><td>Huber loss divided by beta.</td></tr>
+<tr><td><code>F.binary_cross_entropy</code><div class="sig">(prob, target, reduction=&#x27;mean&#x27;, eps=1e-07)</div></td><td>BCE on probabilities in (0, 1). Prefer the *_with_logits version.</td></tr>
+<tr><td><code>F.binary_cross_entropy_with_logits</code><div class="sig">(logits, target, reduction=&#x27;mean&#x27;)</div></td><td>Stable BCE: max(x,0) - x·y + log(1 + e^-|x|); gradient is sigmoid(x) - y.</td></tr>
+<tr><td><code>F.nll_loss</code><div class="sig">(log_probs, target, reduction=&#x27;mean&#x27;, ignore_index=None)</div></td><td>Negative log-likelihood. Classes on the LAST axis: (..., C) and target (...).</td></tr>
+<tr><td><code>F.cross_entropy</code><div class="sig">(logits, target, reduction=&#x27;mean&#x27;, label_smoothing=0.0, ignore_index=None)</div></td><td>Softmax + NLL in one stable step. logits (..., C); target: class indices (...).</td></tr>
+<tr><td><code>F.kl_div</code><div class="sig">(log_q, p, reduction=&#x27;batchmean&#x27;)</div></td><td>KL(p || q) given log q (e.g. log_softmax output) and target probabilities p.</td></tr>
+<tr><td><code>F.hinge_loss</code><div class="sig">(scores, target, margin=1.0, reduction=&#x27;mean&#x27;)</div></td><td>Multi-class SVM loss: sum over wrong classes of max(0, s_j - s_y + margin).</td></tr>
+<tr><td><code>F.cosine_similarity</code><div class="sig">(a, b, axis=-1, eps=1e-08)</div></td><td>Cosine of the angle between a and b along axis.</td></tr>
+<tr><td><code>F.linear</code><div class="sig">(x, weight, bias=None)</div></td><td>x @ Wᵀ + b, with W of shape (out_features, in_features) like PyTorch.</td></tr>
+<tr><td><code>F.dropout</code><div class="sig">(x, p=0.5, training=True, rng=None)</div></td><td>Inverted dropout: zero with prob p and scale survivors by 1/(1-p), so the expected activation is unchanged and evaluation needs no rescaling.</td></tr>
+<tr><td><code>F.conv2d</code><div class="sig">(x, weight, bias=None, stride=1, padding=0, dilation=1)</div></td><td>x (N, C, H, W) * weight (O, C, kh, kw) -&gt; (N, O, Ho, Wo). Cross-correlation, as in PyTorch.</td></tr>
+<tr><td><code>F.conv1d</code><div class="sig">(x, weight, bias=None, stride=1, padding=0, dilation=1)</div></td><td>x (N, C, L) * weight (O, C, k) -&gt; (N, O, Lo), via conv2d with height 1.</td></tr>
+<tr><td><code>F.conv_transpose2d</code><div class="sig">(x, weight, bias=None, stride=1, padding=0, output_padding=0, dilation=1)</div></td><td>&#x27;Deconvolution&#x27; (upsampling). x (N, Cin, H, W), weight (Cin, Cout, kh, kw).</td></tr>
+<tr><td><code>F.max_pool2d</code><div class="sig">(x, kernel_size, stride=None, padding=0)</div></td><td>2-D max pooling (NCHW); stride defaults to kernel_size.</td></tr>
+<tr><td><code>F.avg_pool2d</code><div class="sig">(x, kernel_size, stride=None, padding=0)</div></td><td>2-D average pooling (zero padding counted).</td></tr>
+<tr><td><code>F.max_pool1d</code><div class="sig">(x, kernel_size, stride=None, padding=0)</div></td><td>1-D max pooling on (N, C, L).</td></tr>
+<tr><td><code>F.avg_pool1d</code><div class="sig">(x, kernel_size, stride=None, padding=0)</div></td><td>1-D average pooling on (N, C, L).</td></tr>
+<tr><td><code>F.adaptive_avg_pool2d</code><div class="sig">(x, output_size=1)</div></td><td>Average-pool to a fixed output size (H and W must be multiples of it).</td></tr>
+<tr><td><code>F.scaled_dot_product_attention</code><div class="sig">(q, k, v, mask=None)</div></td><td>softmax(q kᵀ / sqrt(d)) v. `mask` is True where attention is NOT allowed.</td></tr>
+</tbody></table></div>
+<h2 id="nn">mytorcha.nn</h2>
+<p>Activation and loss modules accept keyword arguments that are passed to their function, e.g. <code>nn.LeakyReLU(negative_slope=0.2)</code>, <code>nn.CrossEntropyLoss(label_smoothing=0.1)</code>. Recurrent layers are batch-first.</p>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>nn.AdaptiveAvgPool2d</code><div class="sig">(output_size=1)</div></td><td>AdaptiveAvgPool2d(1) = global average pooling: (N, C, H, W) -&gt; (N, C, 1, 1).</td></tr>
+<tr><td><code>nn.Arctan</code><div class="sig">(**kwargs)</div></td><td>arctan(x)</td></tr>
+<tr><td><code>nn.AvgPool1d</code><div class="sig">(kernel_size, stride=None, padding=0)</div></td><td>Module form of avg_pool1d.</td></tr>
+<tr><td><code>nn.AvgPool2d</code><div class="sig">(kernel_size, stride=None, padding=0)</div></td><td>Module form of avg_pool2d.</td></tr>
+<tr><td><code>nn.BatchNorm1d</code><div class="sig">(num_features, eps=1e-05, momentum=0.1, affine=True)</div></td><td>Input (N, C) or (N, C, L).</td></tr>
+<tr><td><code>nn.BatchNorm2d</code><div class="sig">(num_features, eps=1e-05, momentum=0.1, affine=True)</div></td><td>Input (N, C, H, W).</td></tr>
+<tr><td><code>nn.BCELoss</code><div class="sig">(**kwargs)</div></td><td>binary cross-entropy on probabilities</td></tr>
+<tr><td><code>nn.BCEWithLogitsLoss</code><div class="sig">(**kwargs)</div></td><td>sigmoid + binary cross-entropy, numerically stable</td></tr>
+<tr><td><code>nn.CELU</code><div class="sig">(**kwargs)</div></td><td>x if x &gt; 0 else alpha·(e^(x/alpha) - 1)</td></tr>
+<tr><td><code>nn.Conv1d</code><div class="sig">(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=True)</div></td><td>(N, C_in, L) -&gt; (N, C_out, L_out).</td></tr>
+<tr><td><code>nn.Conv2d</code><div class="sig">(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=True)</div></td><td>(N, C_in, H, W) -&gt; (N, C_out, H_out, W_out).</td></tr>
+<tr><td><code>nn.ConvTranspose2d</code><div class="sig">(in_channels, out_channels, kernel_size, stride=1, padding=0, output_padding=0, dilation=1, bias=True)</div></td><td>Learned upsampling (decoders, GANs, U-Nets). stride=2 roughly doubles H and W.</td></tr>
+<tr><td><code>nn.CrossEntropyLoss</code><div class="sig">(**kwargs)</div></td><td>softmax + negative log-likelihood; logits (..., C), int targets (...)</td></tr>
+<tr><td><code>nn.Dropout</code><div class="sig">(p=0.5)</div></td><td>Zero activations with probability p while training (inverted dropout).</td></tr>
+<tr><td><code>nn.ELU</code><div class="sig">(**kwargs)</div></td><td>x if x &gt; 0 else alpha·(eˣ - 1)</td></tr>
+<tr><td><code>nn.Embedding</code><div class="sig">(num_embeddings, embedding_dim, padding_idx=None)</div></td><td>A lookup table: integer ids (any shape) -&gt; vectors (..., embedding_dim).</td></tr>
+<tr><td><code>nn.Flatten</code><div class="sig">(start_dim=1)</div></td><td>(N, C, H, W) -&gt; (N, C·H·W).</td></tr>
+<tr><td><code>nn.GELU</code><div class="sig">(**kwargs)</div></td><td>x·Φ(x); approximate=&#x27;tanh&#x27; for the GPT-2 formula</td></tr>
+<tr><td><code>nn.GroupNorm</code><div class="sig">(num_groups, num_channels, eps=1e-05, affine=True)</div></td><td>Split C channels into groups and normalise each group per sample (batch-size independent).</td></tr>
+<tr><td><code>nn.GRU</code><div class="sig">(input_size, hidden_size, num_layers=1, bias=True, dropout=0.0, bidirectional=False, **cell_kwargs)</div></td><td>Multi-layer (bi)directional GRU; returns output, h_n.</td></tr>
+<tr><td><code>nn.GRUCell</code><div class="sig">(input_size, hidden_size, bias=True)</div></td><td>Gated recurrent unit: an LSTM with fewer gates and no separate cell state.</td></tr>
+<tr><td><code>nn.Hardsigmoid</code><div class="sig">(**kwargs)</div></td><td>clip(x/6 + 1/2, 0, 1)</td></tr>
+<tr><td><code>nn.Hardswish</code><div class="sig">(**kwargs)</div></td><td>x·clip(x + 3, 0, 6) / 6 (MobileNetV3)</td></tr>
+<tr><td><code>nn.Hardtanh</code><div class="sig">(**kwargs)</div></td><td>clip(x, -1, 1)</td></tr>
+<tr><td><code>nn.HingeLoss</code><div class="sig">(**kwargs)</div></td><td>multi-class SVM margin loss</td></tr>
+<tr><td><code>nn.HuberLoss</code><div class="sig">(**kwargs)</div></td><td>quadratic near 0, linear beyond `delta`</td></tr>
+<tr><td><code>nn.Identity</code><div class="sig">()</div></td><td>Returns its input.</td></tr>
+<tr><td><code>nn.KLDivLoss</code><div class="sig">(**kwargs)</div></td><td>KL(target || exp(input)); input = log-probabilities</td></tr>
+<tr><td><code>nn.L1Loss</code><div class="sig">(**kwargs)</div></td><td>mean(|pred - y|): regression, robust to outliers</td></tr>
+<tr><td><code>nn.LayerNorm</code><div class="sig">(normalized_shape, eps=1e-05, elementwise_affine=True)</div></td><td>Normalise over the last dims of each sample (Transformers, RNNs).</td></tr>
+<tr><td><code>nn.LeakyReLU</code><div class="sig">(**kwargs)</div></td><td>x if x &gt; 0 else negative_slope·x</td></tr>
+<tr><td><code>nn.Linear</code><div class="sig">(in_features, out_features, bias=True)</div></td><td>y = x Wᵀ + b. W: (out_features, in_features).</td></tr>
+<tr><td><code>nn.LogSigmoid</code><div class="sig">(**kwargs)</div></td><td>log(sigmoid(x))</td></tr>
+<tr><td><code>nn.LogSoftmax</code><div class="sig">(**kwargs)</div></td><td>log of softmax, computed stably</td></tr>
+<tr><td><code>nn.LSTM</code><div class="sig">(input_size, hidden_size, num_layers=1, bias=True, dropout=0.0, bidirectional=False, **cell_kwargs)</div></td><td>Returns output, (h_n, c_n). Pass (h_0, c_0) of shape (L·dirs, N, H) to continue a sequence.</td></tr>
+<tr><td><code>nn.LSTMCell</code><div class="sig">(input_size, hidden_size, bias=True)</div></td><td>Long short-term memory: a cell state c that is changed only by gated addition, so gradients can flow over many steps without vanishing.</td></tr>
+<tr><td><code>nn.MaxPool1d</code><div class="sig">(kernel_size, stride=None, padding=0)</div></td><td>Module form of max_pool1d.</td></tr>
+<tr><td><code>nn.MaxPool2d</code><div class="sig">(kernel_size, stride=None, padding=0)</div></td><td>Module form of max_pool2d.</td></tr>
+<tr><td><code>nn.Mish</code><div class="sig">(**kwargs)</div></td><td>x·tanh(softplus(x))</td></tr>
+<tr><td><code>nn.Module</code><div class="sig">()</div></td><td>Base class: subclass it, create layers/Parameters in __init__, write forward().</td></tr>
+<tr><td><code>nn.ModuleList</code><div class="sig">(modules=())</div></td><td>A list of modules (a plain Python list works too).</td></tr>
+<tr><td><code>nn.MSELoss</code><div class="sig">(**kwargs)</div></td><td>mean((pred - y)²): regression</td></tr>
+<tr><td><code>nn.MultiheadAttention</code><div class="sig">(embed_dim, num_heads, dropout=0.0, bias=True)</div></td><td>Each head attends with its own slice of the q/k/v projections; the heads&#x27; outputs are concatenated and mixed by out_proj.</td></tr>
+<tr><td><code>nn.NLLLoss</code><div class="sig">(**kwargs)</div></td><td>negative log-likelihood on log-probabilities</td></tr>
+<tr><td><code>nn.Parameter</code><div class="sig">(data, requires_grad=True)</div></td><td>A Tensor that a Module should train (requires_grad=True by default).</td></tr>
+<tr><td><code>nn.PReLU</code><div class="sig">(num_parameters=1, init_value=0.25)</div></td><td>Leaky ReLU whose negative slope is learned (one per channel, or shared).</td></tr>
+<tr><td><code>nn.ReLU</code><div class="sig">(**kwargs)</div></td><td>max(0, x)</td></tr>
+<tr><td><code>nn.ReLU6</code><div class="sig">(**kwargs)</div></td><td>min(max(0, x), 6)</td></tr>
+<tr><td><code>nn.RNN</code><div class="sig">(input_size, hidden_size, num_layers=1, bias=True, dropout=0.0, bidirectional=False, **cell_kwargs)</div></td><td>Elman RNN. nonlinearity=&#x27;tanh&#x27; | &#x27;relu&#x27;.</td></tr>
+<tr><td><code>nn.RNNCell</code><div class="sig">(input_size, hidden_size, bias=True, nonlinearity=&#x27;tanh&#x27;)</div></td><td>h&#x27; = tanh(x W_ihᵀ + b_ih + h W_hhᵀ + b_hh).</td></tr>
+<tr><td><code>nn.SELU</code><div class="sig">(**kwargs)</div></td><td>scale·ELU(x, 1.673…), self-normalising</td></tr>
+<tr><td><code>nn.Sequential</code><div class="sig">(*layers)</div></td><td>Run modules one after another: Sequential(Linear(2, 8), ReLU(), Linear(8, 1)).</td></tr>
+<tr><td><code>nn.Sigmoid</code><div class="sig">(**kwargs)</div></td><td>1 / (1 + e⁻ˣ)</td></tr>
+<tr><td><code>nn.SiLU</code><div class="sig">(**kwargs)</div></td><td>x·sigmoid(x), a.k.a. swish</td></tr>
+<tr><td><code>nn.SmoothL1Loss</code><div class="sig">(**kwargs)</div></td><td>Huber / beta (object detection)</td></tr>
+<tr><td><code>nn.Softmax</code><div class="sig">(**kwargs)</div></td><td>probabilities along `axis` (default last)</td></tr>
+<tr><td><code>nn.Softmin</code><div class="sig">(**kwargs)</div></td><td>softmax(-x)</td></tr>
+<tr><td><code>nn.Softplus</code><div class="sig">(**kwargs)</div></td><td>log(1 + eˣ), a smooth ReLU</td></tr>
+<tr><td><code>nn.Softsign</code><div class="sig">(**kwargs)</div></td><td>x / (1 + |x|)</td></tr>
+<tr><td><code>nn.Swish</code><div class="sig">(**kwargs)</div></td><td>x·sigmoid(x), a.k.a. swish</td></tr>
+<tr><td><code>nn.Tanh</code><div class="sig">(**kwargs)</div></td><td>tanh(x)</td></tr>
+<tr><td><code>nn.TransformerEncoderLayer</code><div class="sig">(d_model, nhead, dim_feedforward=None, dropout=0.0, activation=&#x27;gelu&#x27;)</div></td><td>x + Attention(LN(x)), then x + MLP(LN(x))  (pre-norm, as in GPT-2).</td></tr>
+<tr><td><code>nn.detach_state</code><div class="sig">(state)</div></td><td>Cut the graph between chunks (truncated BPTT): keep the values, drop the history.</td></tr>
+</tbody></table></div>
+<h2 id="module">nn.Module methods</h2>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>Module.parameters</code><div class="sig">(self)</div></td><td>All trainable Parameters (tied ones once).</td></tr>
+<tr><td><code>Module.named_parameters</code><div class="sig">(self, prefix=&#x27;&#x27;)</div></td><td>(dotted name, Parameter) pairs.</td></tr>
+<tr><td><code>Module.modules</code><div class="sig">(self)</div></td><td>This module and every sub-module.</td></tr>
+<tr><td><code>Module.named_modules</code><div class="sig">(self, prefix=&#x27;&#x27;)</div></td><td>(prefix, module) pairs.</td></tr>
+<tr><td><code>Module.num_parameters</code><div class="sig">(self)</div></td><td>Total number of trainable scalars.</td></tr>
+<tr><td><code>Module.train</code><div class="sig">(self, mode=True)</div></td><td>Set training mode on every sub-module.</td></tr>
+<tr><td><code>Module.eval</code><div class="sig">(self)</div></td><td>Set evaluation mode (Dropout off, BatchNorm uses running stats).</td></tr>
+<tr><td><code>Module.zero_grad</code><div class="sig">(self)</div></td><td>Set every parameter&#x27;s .grad to None.</td></tr>
+<tr><td><code>Module.state_dict</code><div class="sig">(self)</div></td><td>Copies of parameters and buffers, by name.</td></tr>
+<tr><td><code>Module.load_state_dict</code><div class="sig">(self, state)</div></td><td>Load values from a state_dict (shapes must match).</td></tr>
+<tr><td><code>Module.save</code><div class="sig">(self, path)</div></td><td>Save the state_dict to a .npz file.</td></tr>
+<tr><td><code>Module.load</code><div class="sig">(self, path)</div></td><td>Load a .npz file saved by save(); returns the module.</td></tr>
+<tr><td><code>Module.extra_repr</code><div class="sig">(self)</div></td><td>Override to add details to print(module).</td></tr>
+</tbody></table></div>
+<h2 id="optim">mytorcha.optim</h2>
+<p>Every optimizer has <code>step()</code>, <code>zero_grad()</code>, <code>lr</code> (read/write), <code>params</code>, per-parameter <code>state</code>, and <code>state_dict()</code> / <code>load_state_dict()</code>. Schedulers have <code>step()</code>, which returns the new lr.</p>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>optim.SGD</code><div class="sig">(params, lr=0.01, momentum=0.0, nesterov=False, weight_decay=0.0, dampening=0.0)</div></td><td>w -= lr·g, optionally with momentum (a running sum of past gradients) and Nesterov look-ahead. weight_decay adds wd·w to the gradient (L2 penalty).</td></tr>
+<tr><td><code>optim.Adagrad</code><div class="sig">(params, lr=0.01, eps=1e-10, weight_decay=0.0)</div></td><td>Divide by sqrt(sum of all past g²): rarely-updated weights get bigger steps.</td></tr>
+<tr><td><code>optim.RMSprop</code><div class="sig">(params, lr=0.01, alpha=0.99, eps=1e-08, momentum=0.0, centered=False, weight_decay=0.0)</div></td><td>Adagrad with a *moving average* of g², so the step size does not decay to 0.</td></tr>
+<tr><td><code>optim.Adadelta</code><div class="sig">(params, lr=1.0, rho=0.9, eps=1e-06, weight_decay=0.0)</div></td><td>RMSprop whose step size is itself a running RMS of past updates (no lr tuning).</td></tr>
+<tr><td><code>optim.Adam</code><div class="sig">(params, lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0, amsgrad=False)</div></td><td>Momentum (m, 1st moment) + RMSprop (v, 2nd moment) + bias correction.</td></tr>
+<tr><td><code>optim.AdamW</code><div class="sig">(params, lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.01, amsgrad=False)</div></td><td>Adam with *decoupled* weight decay: shrink weights directly instead of adding wd·w to the gradient (which Adam&#x27;s normalisation would rescale).</td></tr>
+<tr><td><code>optim.Adamax</code><div class="sig">(params, lr=0.002, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0)</div></td><td>Adam with the infinity norm: v = max(β2·v, |g|).</td></tr>
+<tr><td><code>optim.Lion</code><div class="sig">(params, lr=0.0001, betas=(0.9, 0.99), weight_decay=0.0)</div></td><td>Lion (Chen et al., 2023): step by the SIGN of an interpolated momentum. Every weight moves by exactly ±lr, so use a ~10x smaller lr than Adam.</td></tr>
+<tr><td><code>optim.clip_grad_norm_</code><div class="sig">(params, max_norm)</div></td><td>Rescale all gradients together so their global L2 norm is &lt;= max_norm. Essential for RNNs, whose gradients can explode. Returns the norm before clipping.</td></tr>
+<tr><td><code>optim.StepLR</code><div class="sig">(optimizer, step_size, gamma=0.1)</div></td><td>Multiply lr by gamma every step_size epochs.</td></tr>
+<tr><td><code>optim.ExponentialLR</code><div class="sig">(optimizer, gamma)</div></td><td>Multiply lr by gamma every epoch.</td></tr>
+<tr><td><code>optim.CosineAnnealingLR</code><div class="sig">(optimizer, T_max, eta_min=0.0)</div></td><td>Smoothly decay from base_lr to eta_min over T_max epochs along a half cosine.</td></tr>
+<tr><td><code>optim.LambdaLR</code><div class="sig">(optimizer, fn)</div></td><td>lr = base_lr · fn(epoch). E.g. linear warm-up: LambdaLR(opt, lambda e: min(1, (e + 1) / 10)).</td></tr>
+</tbody></table></div>
+<h2 id="init">mytorcha.init</h2>
+<p>In-place initialisers: they fill <code>tensor.data</code> and return the tensor.</p>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>init.uniform_</code><div class="sig">(t, a=-1.0, b=1.0)</div></td><td>Fill with U(a, b).</td></tr>
+<tr><td><code>init.normal_</code><div class="sig">(t, mean=0.0, std=1.0)</div></td><td>Fill with N(mean, std²).</td></tr>
+<tr><td><code>init.zeros_</code><div class="sig">(t)</div></td><td>Fill with 0.</td></tr>
+<tr><td><code>init.ones_</code><div class="sig">(t)</div></td><td>Fill with 1.</td></tr>
+<tr><td><code>init.xavier_uniform_</code><div class="sig">(t, gain=1.0)</div></td><td>Glorot: Var(w) = 2 / (fan_in + fan_out). Good for tanh / sigmoid.</td></tr>
+<tr><td><code>init.xavier_normal_</code><div class="sig">(t, gain=1.0)</div></td><td>Glorot normal: std = gain·√(2/(fan_in + fan_out)).</td></tr>
+<tr><td><code>init.kaiming_uniform_</code><div class="sig">(t, a=0.0)</div></td><td>He: Var(w) = 2 / fan_in, because ReLU zeroes half of its inputs.</td></tr>
+<tr><td><code>init.kaiming_normal_</code><div class="sig">(t, a=0.0)</div></td><td>He normal: std = √(2/((1 + a²)·fan_in)).</td></tr>
+<tr><td><code>init.orthogonal_</code><div class="sig">(t, gain=1.0)</div></td><td>(Semi-)orthogonal matrix, scaled by gain.</td></tr>
+<tr><td><code>init.default_uniform_</code><div class="sig">(t, fan_in)</div></td><td>PyTorch&#x27;s default for Linear/Conv/RNN: U(-1/sqrt(fan_in), 1/sqrt(fan_in)).</td></tr>
+</tbody></table></div>
+<h2 id="datasets">mytorcha.datasets</h2>
+<p>Small built-in datasets; nothing is downloaded.</p>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>datasets.make_spirals</code><div class="sig">(n_per_class=100, n_classes=3, noise=0.2, rng=None)</div></td><td>The classic CS231n spiral: not linearly separable, so a linear model fails.</td></tr>
+<tr><td><code>datasets.make_moons</code><div class="sig">(n=200, noise=0.1, rng=None)</div></td><td>Two interleaving half-circles (binary classification).</td></tr>
+<tr><td><code>datasets.sine_sequences</code><div class="sig">(n=256, T=30, rng=None)</div></td><td>Windows of noisy sine waves; target = the next value. For RNN/LSTM/GRU demos.</td></tr>
+<tr><td><code>datasets.load_digits_csv</code><div class="sig">(path=&#x27;data/train.csv&#x27;, limit=None)</div></td><td>Kaggle &#x27;Digit Recognizer&#x27; CSV (label, pixel0..pixel783) -&gt; X (N, 1, 28, 28) in [0, 1], y (N,).</td></tr>
+</tbody></table></div>
+<h2 id="gradcheck">mytorcha.gradcheck</h2>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>gradcheck.gradcheck</code><div class="sig">(f, inputs, atol=1e-05, rtol=0.0001)</div></td><td>Compare backward() of `f().sum()` with numerical gradients for each input.</td></tr>
+<tr><td><code>gradcheck.numerical_grad</code><div class="sig">(f, x, h=1e-06)</div></td><td>d f() / d x.data by central differences (x is changed in place, then restored).</td></tr>
+<tr><td><code>gradcheck.rand</code><div class="sig">(*shape, seed=0, positive=False, requires_grad=True)</div></td><td>float64 test tensor.</td></tr>
+</tbody></table></div>
+<h2 id="scalar">mytorcha.scalar</h2>
+<p>The one-number-per-node engine of chapter 1. <code>Node</code> attributes: <code>data</code>, <code>grad</code>, <code>label</code>; supports <code>+ - * / **</code> with numbers on either side.</p>
+<div class="table-wrap"><table class="ref"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>scalar.Node</code><div class="sig">(data, _prev=(), _op=&#x27;&#x27;, label=&#x27;&#x27;)</div></td><td>A single number that remembers how it was computed.</td></tr>
+<tr><td><code>scalar.sum_nodes</code><div class="sig">(nodes)</div></td><td>Sum a list of nodes with one node per addition (no hidden Node(0) start).</td></tr>
+<tr><td><code>scalar.draw</code><div class="sig">(root, fmt=&#x27;svg&#x27;)</div></td><td>Render the graph with graphviz (optional dependency: `pip install graphviz`).</td></tr>
+<tr><td><code>scalar.Neuron</code><div class="sig">(n_in, act=&#x27;relu&#x27;)</div></td><td>w·x + b followed by an activation (any Node method name, e.g. &quot;tanh&quot;).</td></tr>
+<tr><td><code>scalar.Layer</code><div class="sig">(n_in, n_out, act=&#x27;relu&#x27;)</div></td><td>A list of scalar Neurons; always returns a list.</td></tr>
+<tr><td><code>scalar.MLP</code><div class="sig">(n_in, hidden, n_out, act=&#x27;relu&#x27;)</div></td><td>MLP(2, [8, 8], 1): hidden layers use `act`, the last layer is linear (activating the logits would clip them before softmax / the loss).</td></tr>
+<tr><td><code>Node.exp</code><div class="sig">(self)</div></td><td>eˣ.</td></tr>
+<tr><td><code>Node.log</code><div class="sig">(self)</div></td><td>Natural log.</td></tr>
+<tr><td><code>Node.abs</code><div class="sig">(self)</div></td><td>|x|.</td></tr>
+<tr><td><code>Node.relu</code><div class="sig">(self)</div></td><td>max(0, x).</td></tr>
+<tr><td><code>Node.leaky_relu</code><div class="sig">(self, slope=0.01)</div></td><td>Leaky ReLU.</td></tr>
+<tr><td><code>Node.elu</code><div class="sig">(self, alpha=1.0)</div></td><td>ELU.</td></tr>
+<tr><td><code>Node.sigmoid</code><div class="sig">(self)</div></td><td>Stable sigmoid.</td></tr>
+<tr><td><code>Node.tanh</code><div class="sig">(self)</div></td><td>tanh.</td></tr>
+<tr><td><code>Node.softplus</code><div class="sig">(self)</div></td><td>Stable softplus.</td></tr>
+<tr><td><code>Node.arctan</code><div class="sig">(self)</div></td><td>arctan.</td></tr>
+<tr><td><code>Node.gelu</code><div class="sig">(self)</div></td><td>GELU (tanh approximation).</td></tr>
+<tr><td><code>Node.linear</code><div class="sig">(self)</div></td><td>Identity (for a linear output layer).</td></tr>
+<tr><td><code>Node.topo</code><div class="sig">(self)</div></td><td>Nodes in topological order (inputs before outputs), iteratively.</td></tr>
+<tr><td><code>Node.backward</code><div class="sig">(self)</div></td><td>Fill `.grad` of every node this one depends on (d self / d node).</td></tr>
+</tbody></table></div>
+
+<nav class="pager" aria-label="Chapter navigation"><a class="prev" href="07-attention.html" rel="prev"><span>← Previous</span>Attention and Transformers</a></nav>
+<p class="foot">MyTorcha by <a href="https://github.com/benisalla">Ismail Ben Alla</a>. MIT licensed. The deal is in the details.</p>
+</article>
+</main>
+</div>
+</body>
+</html>

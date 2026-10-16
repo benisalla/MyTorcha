@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chapter 3 · Modules and layers · MyTorcha</title>
+<meta name="description" content="Build models with MyTorcha&#x27;s Module, Parameter, Sequential and ModuleList; save and load weights; initialise them properly.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="24" height="24">MyTorcha</a>
+  <button type="button" class="menu-btn" aria-controls="sidebar" aria-expanded="false">Chapters</button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Chapters">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="28" height="28">MyTorcha</a>
+  <p class="tagline">A baby deep learning framework, built from scratch so nothing is magic.</p>
+  <ol>
+<li><a href="index.html"><span class="num">·</span>Start here</a></li>
+<li><a href="01-autograd.html"><span class="num">01</span>Autograd with single numbers</a></li>
+<li><a href="02-tensors.html"><span class="num">02</span>Tensors</a></li>
+<li><a href="03-modules.html" aria-current="page"><span class="num">03</span>Modules and layers</a></li>
+<li><a href="04-training.html"><span class="num">04</span>Losses, optimizers, training</a></li>
+<li><a href="05-cnn.html"><span class="num">05</span>Convolutional networks</a></li>
+<li><a href="06-rnn.html"><span class="num">06</span>RNN, LSTM, GRU</a></li>
+<li><a href="07-attention.html"><span class="num">07</span>Attention and Transformers</a></li>
+<li><a href="reference.html"><span class="num">API</span>API reference</a></li>
+  </ol>
+  <p class="side-foot"><a href="https://github.com/benisalla/MyTorcha">Source on GitHub</a></p>
+</nav>
+<main id="main">
+<article class="content">
+<p class="kicker">Chapter 3</p>
+<h1>Modules and layers</h1>
+<p class="lead">A model is a pile of tensors with <code>requires_grad=True</code>, plus a function that uses them. <code>Module</code> is just the tidy way to keep that pile.</p>
+
+<h2 id="sequential">Stacking layers: <code>Sequential</code></h2>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn
+
+mt.manual_seed(0)
+model = nn.Sequential(nn.Linear(2, 16), nn.ReLU(), nn.Linear(16, 3))
+print(model)
+print(model.num_parameters())
+print([name for name, p in model.named_parameters()])</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>Sequential(
+  (layers.0): Linear(2, 16, bias=True)
+  (layers.1): ReLU()
+  (layers.2): Linear(16, 3, bias=True)
+)
+99
+['layers.0.weight', 'layers.0.bias', 'layers.2.weight', 'layers.2.bias']</code></pre></div>
+<p>Count them yourself: 2×16 weights + 16 biases + 16×3 weights + 3 biases = 99. <code>Linear</code> stores its weight as <code>(out_features, in_features)</code> and computes <code>x @ Wᵀ + b</code>, exactly like PyTorch, so shapes and checkpoints translate one-to-one. <code>ReLU</code> has no parameters, so it doesn't appear in the list.</p>
+
+<h2 id="custom">Writing your own Module</h2>
+<p>Subclass <code>nn.Module</code>, create layers in <code>__init__</code>, write <code>forward</code>. Calling the model calls <code>forward</code>.</p>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+import mytorcha.functional as F
+from mytorcha import nn
+
+class MLP(nn.Module):
+    def __init__(self, n_in, n_hidden, n_out):
+        self.fc1 = nn.Linear(n_in, n_hidden)
+        self.fc2 = nn.Linear(n_hidden, n_out)
+        self.drop = nn.Dropout(0.1)
+
+    def forward(self, x):
+        return self.fc2(self.drop(F.relu(self.fc1(x))))
+
+m = MLP(4, 8, 2)
+print(m)
+print(len(m.parameters()), m.num_parameters())
+print(m(mt.randn(5, 4)).shape)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>MLP(
+  (fc1): Linear(4, 8, bias=True)
+  (fc2): Linear(8, 2, bias=True)
+  (drop): Dropout(p=0.1)
+)
+4 58
+(5, 2)</code></pre></div>
+<p>There's no <code>super().__init__()</code> to remember and nothing to register. That's because of how parameters are found.</p>
+
+<h2 id="discovery">How <code>parameters()</code> finds everything</h2>
+<p><code>Module.named_parameters()</code> walks the module's attributes (<code>vars(self)</code>):</p>
+<ul>
+  <li>a <code>Parameter</code> is yielded;</li>
+  <li>a <code>Module</code> is walked recursively;</li>
+  <li>a <strong>list or tuple</strong> of Modules or Parameters is walked too, so <code>self.blocks = [Linear(...), ...]</code> just works;</li>
+  <li>a shared (tied) weight is listed only once, so the optimizer doesn't update it twice.</li>
+</ul>
+<div class="code"><pre><code class="lang-python">import numpy as np
+import mytorcha.functional as F
+from mytorcha import nn
+
+class Scale(nn.Module):
+    def __init__(self, n):
+        self.gain = nn.Parameter(np.ones(n))   # a hand-made trainable tensor
+
+    def forward(self, x):
+        return x * self.gain
+
+class Deep(nn.Module):
+    def __init__(self):
+        self.blocks = [nn.Linear(8, 8) for _ in range(3)]
+        self.scale = Scale(8)
+
+    def forward(self, x):
+        for blk in self.blocks:
+            x = F.gelu(blk(x))
+        return self.scale(x)
+
+print([n for n, _ in Deep().named_parameters()])</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>['blocks.0.weight', 'blocks.0.bias', 'blocks.1.weight', 'blocks.1.bias', 'blocks.2.weight', 'blocks.2.bias', 'scale.gain']</code></pre></div>
+<p><code>nn.Parameter</code> is just a Tensor with <code>requires_grad=True</code>, stored as float32. <code>nn.ModuleList</code> also exists if you like the PyTorch spelling, but a plain list is fine.</p>
+<div class="note"><p><strong>Gotcha:</strong> modules hidden inside a <em>dict</em>, or created inside <code>forward</code>, are invisible to <code>parameters()</code>, so they will never train. If a layer refuses to learn, check that it shows up in <code>named_parameters()</code>.</p></div>
+
+<h2 id="modes">Training mode vs evaluation mode</h2>
+<p>Two layers behave differently while training. <code>Dropout</code> randomly zeroes activations only in training. <code>BatchNorm</code> normalises with the batch's statistics in training, and with its running averages in evaluation.</p>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn
+
+net = nn.Sequential(nn.Linear(3, 4), nn.BatchNorm1d(4))
+net.eval()
+print(net.training, net[1].training)
+net.train()
+print(net.training, net[1].training)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>False False
+True True</code></pre></div>
+<p><code>train()</code> and <code>eval()</code> set the flag on every sub-module. Forgetting <code>model.eval()</code> before measuring accuracy is a classic way to get noisy, slightly-too-low numbers. <code>Trainer</code> switches modes for you.</p>
+
+<h2 id="save">Saving and loading</h2>
+<div class="code"><pre><code class="lang-python">import numpy as np
+import mytorcha as mt
+from mytorcha import nn
+
+net = nn.Sequential(nn.Linear(3, 4), nn.BatchNorm1d(4))
+net(mt.randn(8, 3))                       # one training-mode pass updates BatchNorm's running stats
+print(list(net.state_dict()))
+
+net.save("net.npz")                       # a plain NumPy .npz archive
+twin = nn.Sequential(nn.Linear(3, 4), nn.BatchNorm1d(4)).load("net.npz")
+net.eval(); twin.eval()
+x = mt.randn(2, 3)
+print(np.allclose(net(x).data, twin(x).data))</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>['layers.0.weight', 'layers.0.bias', 'layers.1.weight', 'layers.1.bias', 'layers.1.running_mean', 'layers.1.running_var']
+True</code></pre></div>
+<p>The <code>state_dict</code> holds parameters <em>and</em> buffers: non-trainable state such as BatchNorm's <code>running_mean</code>. A module declares its buffers in a class attribute <code>_buffers = ("running_mean", "running_var")</code>. The file is a standard <code>.npz</code>, so you can open it with <code>np.load</code> and look inside. No pickle and no mystery.</p>
+
+<h2 id="init">Initialisation: why v1's uniform(−1, 1) hurt</h2>
+<p>v1 drew every weight from uniform(−1, 1). Take 1,000 inputs of 784 pixels in [0, 1] through a 784 → 10 layer:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Initialisation</th><th class="num">std of w·x</th><th class="num">tanh saturated (|a| &gt; 0.99)</th></tr></thead>
+<tbody>
+<tr><td>v1: uniform(−1, 1)</td><td class="num bad">8.54</td><td class="num bad">76%</td></tr>
+<tr><td>MyTorcha default: U(±1/√fan_in)</td><td class="num good">0.25</td><td class="num good">0%</td></tr>
+</tbody></table></div>
+<p>A sum of 784 random terms has a standard deviation of about √784 times the size of one term. With pre-activations around ±8.5, three quarters of tanh units sit on a flat part of the curve with zero gradient (you saw this in the chapter 1 widget). The fix is to scale the weights by the fan-in. Every layer does it by default, using PyTorch's default rule. For other schemes, use <code>mytorcha.init</code>:</p>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn
+
+mt.manual_seed(0)
+w = mt.init.kaiming_normal_(nn.Parameter.empty(256, 784))   # He init, for ReLU nets
+print(round(float(w.data.std()), 4), round((2 / 784) ** 0.5, 4))</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>0.0506 0.0505</code></pre></div>
+<div class="table-wrap"><table>
+<thead><tr><th>Function</th><th>Variance</th><th>Use with</th></tr></thead>
+<tbody>
+<tr><td><code>xavier_uniform_</code>, <code>xavier_normal_</code></td><td>2 / (fan_in + fan_out)</td><td>tanh, sigmoid</td></tr>
+<tr><td><code>kaiming_uniform_</code>, <code>kaiming_normal_</code></td><td>2 / fan_in</td><td>ReLU family: ReLU zeroes half its inputs, so double the variance</td></tr>
+<tr><td><code>orthogonal_</code></td><td>orthogonal rows</td><td>recurrent weight matrices</td></tr>
+<tr><td><code>default_uniform_</code></td><td>U(±1/√fan_in)</td><td>what Linear, Conv and RNN layers use by default</td></tr>
+<tr><td><code>normal_</code>, <code>uniform_</code>, <code>zeros_</code>, <code>ones_</code></td><td>anything you like</td><td>embeddings, biases, experiments</td></tr>
+</tbody></table></div>
+<p>All initialisers fill in place (the trailing underscore) and use the global generator, so <code>mt.manual_seed(0)</code> makes runs reproducible.</p>
+
+<h2 id="zoo">The layer zoo</h2>
+<p>Everything below lives in <code>mytorcha.nn</code>. Later chapters cover convolution, recurrence and attention in depth.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Family</th><th>Layers</th></tr></thead>
+<tbody>
+<tr><td>Dense</td><td><code>Linear</code>, <code>Identity</code>, <code>Flatten</code></td></tr>
+<tr><td>Convolution</td><td><code>Conv1d</code>, <code>Conv2d</code>, <code>ConvTranspose2d</code></td></tr>
+<tr><td>Pooling</td><td><code>MaxPool1d</code>, <code>MaxPool2d</code>, <code>AvgPool1d</code>, <code>AvgPool2d</code>, <code>AdaptiveAvgPool2d</code></td></tr>
+<tr><td>Normalisation</td><td><code>BatchNorm1d</code>, <code>BatchNorm2d</code>, <code>LayerNorm</code>, <code>GroupNorm</code></td></tr>
+<tr><td>Regularisation</td><td><code>Dropout</code></td></tr>
+<tr><td>Lookup</td><td><code>Embedding</code> (with <code>padding_idx</code>)</td></tr>
+<tr><td>Recurrent</td><td><code>RNN</code>, <code>LSTM</code>, <code>GRU</code>, <code>RNNCell</code>, <code>LSTMCell</code>, <code>GRUCell</code></td></tr>
+<tr><td>Attention</td><td><code>MultiheadAttention</code>, <code>TransformerEncoderLayer</code></td></tr>
+<tr><td>Activations</td><td><code>ReLU</code>, <code>ReLU6</code>, <code>LeakyReLU</code>, <code>PReLU</code>, <code>ELU</code>, <code>CELU</code>, <code>SELU</code>, <code>GELU</code>, <code>Sigmoid</code>, <code>LogSigmoid</code>, <code>Hardsigmoid</code>, <code>Tanh</code>, <code>Hardtanh</code>, <code>Softplus</code>, <code>Softsign</code>, <code>SiLU</code>/<code>Swish</code>, <code>Hardswish</code>, <code>Mish</code>, <code>Arctan</code>, <code>Softmax</code>, <code>LogSoftmax</code>, <code>Softmin</code></td></tr>
+</tbody></table></div>
+<p>Activation modules pass keyword arguments through to their function, for example <code>nn.LeakyReLU(negative_slope=0.2)</code>, <code>nn.GELU(approximate="tanh")</code> or <code>nn.Softmax(axis=-1)</code>. Each one is a <em>fused</em> op in <code>mytorcha.functional</code>: f(x) and f′(x) are written side by side, and each is gradchecked and compared with PyTorch.</p>
+
+<h2 id="try">Try it</h2>
+<details class="try"><summary>1. How many parameters does <code>nn.Sequential(nn.Linear(784, 128), nn.ReLU(), nn.Linear(128, 10))</code> have?</summary>
+<div class="answer"><p><strong>101,770</strong>: 784·128 + 128 + 128·10 + 10. That's the MLP from the digits experiment in chapter 5.</p></div></details>
+<details class="try"><summary>2. You store your layers in <code>self.layers = {"a": nn.Linear(2, 2)}</code>. What does <code>len(model.parameters())</code> return?</summary>
+<div class="answer"><p><strong>0</strong>. Dicts aren't walked (only Parameters, Modules, lists and tuples), so the optimizer gets an empty list. MyTorcha's optimizers refuse an empty list on purpose, so the mistake shows up immediately.</p></div></details>
+<details class="try"><summary>3. Why does Kaiming init use 2/fan_in while Xavier uses 2/(fan_in + fan_out)?</summary>
+<div class="answer"><p>Xavier balances the variance of activations going forward and gradients going backward for symmetric activations like tanh. ReLU throws away the negative half of its input, which halves the variance, so Kaiming doubles the weights' variance to compensate.</p></div></details>
+
+<nav class="pager" aria-label="Chapter navigation"><a class="prev" href="02-tensors.html" rel="prev"><span>← Previous</span>Tensors</a><a class="next" href="04-training.html" rel="next"><span>Next →</span>Losses, optimizers, training</a></nav>
+<p class="foot">MyTorcha by <a href="https://github.com/benisalla">Ismail Ben Alla</a>. MIT licensed. The deal is in the details.</p>
+</article>
+</main>
+</div>
+</body>
+</html>

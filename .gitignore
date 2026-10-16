@@ -8,3 +8,4 @@ checkpoints/
 *.npz
 .idea/
 .env
+site-src/check/

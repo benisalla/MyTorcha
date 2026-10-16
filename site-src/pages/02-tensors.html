@@ -1,0 +1,164 @@
+<p class="kicker">Chapter 2</p>
+<h1>Tensors</h1>
+<p class="lead">Same chain rule, bigger boxes. A <code>Tensor</code> is a node whose value is a whole NumPy array, so one matrix multiply replaces thousands of scalar nodes.</p>
+
+<h2 id="first">Your first Tensor</h2>
+```python
+import mytorcha as mt
+
+x = mt.Tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+y = (x * x).sum()
+y.backward()
+print(y)
+print(x.grad)
+```
+```output
+Tensor(30., requires_grad=True)
+[[2. 4.]
+ [6. 8.]]
+```
+<p>Three things to notice:</p>
+<ul>
+  <li><code>requires_grad=True</code> marks a tensor whose gradient we want: weights, or an input you want to explain. Without it, no graph is recorded through that tensor. That's cheaper, and it's the default for data.</li>
+  <li><code>backward()</code> without arguments only works on a <strong>scalar</strong> (a single number, usually the loss), because it starts from dy/dy = 1.</li>
+  <li><code>x.grad</code> is a plain NumPy array with the same shape as <code>x</code>: here 2x, element by element.</li>
+</ul>
+
+<h2 id="op">What one operation looks like</h2>
+<p>Every op in <code>src/mytorcha/tensor.py</code> computes its output and stores a <code>_grad_fn</code>. Given the gradient <code>g</code> arriving at the output, <code>_grad_fn</code> returns one gradient per input. Here's matrix multiplication, the workhorse of deep learning:</p>
+```python-norun
+def __matmul__(self, other):
+    a, b = self.data, other.data
+    def grad_fn(g):              # g = dL/dC, where C = A @ B
+        return g @ b.T, a.T @ g  # dL/dA = g·Bᵀ,  dL/dB = Aᵀ·g
+    return Tensor._make(a @ b, (self, other), grad_fn, "@")
+```
+<p>(The real version also handles vectors and batches of matrices.) Then <code>backward()</code> does exactly what the scalar engine did: a topological sort, then reverse order, adding each returned gradient into the input's <code>.grad</code>. The difference from chapter 1 is that the ops return gradients instead of mutating their parents. That's cleaner, and it lets the engine handle broadcasting in a single place.</p>
+<div class="note"><p><strong>Shape rule.</strong> A gradient always has the same shape as the thing it's the gradient <em>of</em>. If you ever wonder whether it should be <code>g @ b.T</code> or <code>b.T @ g</code>, write down the shapes. Only one order fits.</p></div>
+
+<h2 id="broadcasting">Broadcasting and <code>_unbroadcast</code></h2>
+<p>NumPy lets you add a bias of shape <code>(3,)</code> to a batch of shape <code>(4, 3)</code>: the bias is silently reused for every row. Reused means "used four times", and the chain rule says a value used four times collects four gradients:</p>
+```python
+import numpy as np
+import mytorcha as mt
+
+x = mt.Tensor(np.ones((4, 3)), requires_grad=True)
+b = mt.Tensor(np.zeros(3), requires_grad=True)
+(x + b).sum().backward()
+print(b.grad)
+```
+```output
+[4. 4. 4.]
+```
+<p>The engine does this in one helper, <code>_unbroadcast(grad, shape)</code>. It sums the gradient over every axis that broadcasting stretched, until it's back to the input's shape. Because the engine calls it for every op, no individual op has to think about broadcasting.</p>
+
+<h2 id="accumulate">Gradients accumulate, so zero them</h2>
+```python
+import mytorcha as mt
+
+a = mt.Tensor([1.0, 2.0], requires_grad=True)
+(a * 3).sum().backward()
+(a * 3).sum().backward()
+print(a.grad)
+a.zero_grad()
+print(a.grad)
+```
+```output
+[6. 6.]
+None
+```
+<p>Calling <code>backward()</code> twice <em>adds</em>. That's a feature: it's how one node used in two places gets both contributions, and it lets you accumulate gradients over several small batches. But in a training loop you must clear them every step: <code>optimizer.zero_grad()</code> or <code>model.zero_grad()</code>. Forgetting this is the most common bug in all of deep learning. It's not just a MyTorcha thing; PyTorch users do it too, daily.</p>
+
+<h2 id="no-grad">Turning the graph off: <code>no_grad</code></h2>
+```python
+import mytorcha as mt
+
+a = mt.Tensor([1.0, 2.0], requires_grad=True)
+with mt.no_grad():
+    z = a * 2
+print(z.requires_grad)
+```
+```output
+False
+```
+<p>Inside <code>no_grad()</code> nothing is recorded, so there's no memory for a graph and no time spent wiring it. Use it for evaluation and inference. <code>Trainer.evaluate</code> and <code>Trainer.predict</code> already do.</p>
+
+<h2 id="dtype">dtypes: float32 by default</h2>
+```python
+import numpy as np
+import mytorcha as mt
+
+print(mt.Tensor([1.0, 2.0]).dtype, mt.Tensor(np.array([1.0])).dtype, mt.Tensor([1, 2]).dtype)
+print(type(np.ones(3).sum()))
+```
+```output
+float32 float64 int64
+<class 'numpy.float64'>
+```
+<p>Python floats become <code>float32</code>, like in PyTorch: half the memory and plenty of precision for training. NumPy arrays keep their dtype, so <code>float64</code> stays <code>float64</code> (the gradient checker needs that) and integer labels stay integers. The second line is the clue to a real bug from this rebuild. Read on.</p>
+
+<h2 id="gradcheck">gradcheck: the lie detector</h2>
+<p>How do we know a backward rule is right? We don't trust it, we measure it. Nudge one input by ±h and see how much the output moves:</p>
+```math
+df/dx  ≈  ( f(x + h) − f(x − h) ) / 2h        (central difference, h = 1e-6)
+```
+<p><code>mytorcha.gradcheck.gradcheck(f, inputs)</code> does this for every element of every input and compares the result with <code>backward()</code>. Watch it catch v1's log bug, re-created on purpose:</p>
+```python
+import numpy as np
+import mytorcha as mt
+from mytorcha.gradcheck import gradcheck, rand
+
+def bad_log(t):                      # v1's bug: 1/log(x) instead of 1/x
+    a = t.data
+    return mt.Tensor._make(np.log(a), (t,), lambda g: (g / np.log(a),), "bad_log")
+
+x = rand(3, positive=True)           # float64 test tensor
+try:
+    gradcheck(lambda: bad_log(x), [x])
+except AssertionError as e:
+    print("caught:", e)
+print(gradcheck(lambda: x.log(), [x]))
+```
+```output
+caught: input 0: max |analytic - numeric| = 6.73
+True
+```
+<p>Every op, activation, loss and layer in MyTorcha passes a gradcheck in the test suite, and the standard ones are also compared against PyTorch.</p>
+<div class="note">
+<p><strong>A true story from this rebuild.</strong> The very first gradcheck of <code>a.sum()</code> <em>failed</em>, with an error of 0.09. The backward rule was fine. The problem was that <code>arr.sum()</code> in NumPy returns a <code>numpy.float64</code> <em>scalar</em>, not an <code>ndarray</code>. The Tensor constructor only recognised arrays, so it treated the scalar like a Python float and down-cast it to float32. Finite differences with h = 10⁻⁶ can't survive float32 rounding, so the check "failed". The fix was one line: treat <code>np.generic</code> like <code>np.ndarray</code>. The lesson is bigger than the fix. Use float64 for gradient checks, and when a check fails, suspect the measurement as much as the maths.</p>
+</div>
+
+<h2 id="ops">Shape operations</h2>
+<p>All of these are differentiable. Their backward just routes the gradient back to where each number came from.</p>
+```python
+import numpy as np
+import mytorcha as mt
+
+t = mt.arange(12).astype(np.float32).reshape(3, 4)
+print(t.shape, t.T.shape, t.reshape(2, 6).shape, t.unsqueeze(0).shape, t[:, 1:3].shape)
+```
+```output
+(3, 4) (4, 3) (2, 6) (1, 3, 4) (3, 2)
+```
+<div class="table-wrap"><table>
+<thead><tr><th>Operation</th><th>Backward does…</th></tr></thead>
+<tbody>
+<tr><td><code>+ - * / **</code>, <code>exp log sqrt abs clip</code></td><td>multiply by the local derivative (then un-broadcast)</td></tr>
+<tr><td><code>a @ b</code></td><td><code>g @ bᵀ</code> and <code>aᵀ @ g</code></td></tr>
+<tr><td><code>sum</code>, <code>mean</code></td><td>copy the gradient back to every summed element (÷N for the mean)</td></tr>
+<tr><td><code>max</code>, <code>min</code></td><td>send the gradient only to the winning element (ties share it)</td></tr>
+<tr><td><code>reshape</code>, <code>transpose</code> / <code>permute</code>, <code>swapaxes</code>, <code>squeeze</code>, <code>unsqueeze</code>, <code>flatten</code></td><td>apply the inverse reshape or permutation to the gradient</td></tr>
+<tr><td><code>t[idx]</code> (slices, integer arrays)</td><td>scatter the gradient back with <code>np.add.at</code>, so repeated indices add up. That's how <code>Embedding</code> learns.</td></tr>
+<tr><td><code>concat</code>, <code>stack</code>, <code>pad</code>, <code>where</code>, <code>masked_fill</code></td><td>split, crop or mask the gradient</td></tr>
+</tbody></table></div>
+<p>Comparisons like <code>t &gt; 0</code> return boolean tensors with no gradient, which is handy for masks.</p>
+
+<h2 id="try">Try it</h2>
+<details class="try"><summary>1. <code>w</code> has shape <code>(1, 3)</code> and is multiplied by a <code>(5, 3)</code> tensor of ones, then summed. What is <code>w.grad</code>?</summary>
+<div class="answer"><p><strong><code>[[5. 5. 5.]]</code></strong>. <code>w</code> was broadcast over 5 rows, so each entry collects 5 gradients of 1. The shape stays <code>(1, 3)</code>, exactly the shape of <code>w</code>.</p></div></details>
+<details class="try"><summary>2. <code>a = Tensor([1., 2., 3.], requires_grad=True); b = a * 2; b.sum().backward()</code>. What are <code>b.grad</code> and <code>a.grad</code>?</summary>
+<div class="answer"><p><code>b.grad = [1. 1. 1.]</code> and <code>a.grad = [2. 2. 2.]</code>. MyTorcha keeps intermediate gradients so you can inspect them. Great for learning, a little memory-hungry.</p></div></details>
+<details class="try"><summary>3. <code>x = Tensor([[1., 5.], [7., 2.]], requires_grad=True); x.max(axis=1).sum().backward()</code>. What is <code>x.grad</code>?</summary>
+<div class="answer"><p><code>[[0. 1.] [1. 0.]]</code>. Only the winner of each row (5 and 7) influenced the output, so only they get gradient. This is exactly max-pooling's backward in chapter 5.</p></div></details>
+<details class="try"><summary>4. You train for 100 steps without ever calling <code>zero_grad()</code>. What happens?</summary>
+<div class="answer"><p>Each step uses the <em>sum</em> of all past gradients, so the updates get bigger and point at where the loss <em>used to</em> slope. Training usually blows up, or wanders off and never settles. Zero your grads.</p></div></details>

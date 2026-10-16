@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chapter 4 · Losses, optimizers and the training loop · MyTorcha</title>
+<meta name="description" content="Every MyTorcha loss and optimizer, learning-rate schedules, gradient clipping, DataLoader and Trainer, with an interactive optimizer race.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="24" height="24">MyTorcha</a>
+  <button type="button" class="menu-btn" aria-controls="sidebar" aria-expanded="false">Chapters</button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Chapters">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="28" height="28">MyTorcha</a>
+  <p class="tagline">A baby deep learning framework, built from scratch so nothing is magic.</p>
+  <ol>
+<li><a href="index.html"><span class="num">·</span>Start here</a></li>
+<li><a href="01-autograd.html"><span class="num">01</span>Autograd with single numbers</a></li>
+<li><a href="02-tensors.html"><span class="num">02</span>Tensors</a></li>
+<li><a href="03-modules.html"><span class="num">03</span>Modules and layers</a></li>
+<li><a href="04-training.html" aria-current="page"><span class="num">04</span>Losses, optimizers, training</a></li>
+<li><a href="05-cnn.html"><span class="num">05</span>Convolutional networks</a></li>
+<li><a href="06-rnn.html"><span class="num">06</span>RNN, LSTM, GRU</a></li>
+<li><a href="07-attention.html"><span class="num">07</span>Attention and Transformers</a></li>
+<li><a href="reference.html"><span class="num">API</span>API reference</a></li>
+  </ol>
+  <p class="side-foot"><a href="https://github.com/benisalla/MyTorcha">Source on GitHub</a></p>
+</nav>
+<main id="main">
+<article class="content">
+<p class="kicker">Chapter 4</p>
+<h1>Losses, optimizers and the training loop</h1>
+<p class="lead">A loss turns "how wrong" into one number. <code>backward()</code> says which way is downhill. An optimizer decides how big a step to take. Repeat a few thousand times and call it learning.</p>
+
+<h2 id="loop">The five-line training loop</h2>
+<p>Every training loop in the world, PyTorch included, is these five lines inside two <code>for</code> loops:</p>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn, optim
+
+mt.manual_seed(0)
+X, y = mt.datasets.make_moons(n=400, noise=0.15)
+loader = mt.DataLoader(mt.TensorDataset(X, y), batch_size=32, shuffle=True)
+
+model = nn.Sequential(nn.Linear(2, 32), nn.Tanh(), nn.Linear(32, 2))
+loss_fn = nn.CrossEntropyLoss()
+optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+
+for epoch in range(20):
+    for xb, yb in loader:
+        loss = loss_fn(model(xb), yb)   # 1. forward
+        optimizer.zero_grad()           # 2. clear old gradients
+        loss.backward()                 # 3. backward
+        optimizer.step()                # 4. update
+    if epoch % 5 == 4:                  # 5. look at it, always look at it
+        print(f"epoch {epoch + 1:2d} | last batch loss {loss.item():.4f}")
+
+with mt.no_grad():
+    acc = (model(mt.Tensor(X)).data.argmax(-1) == y).mean()
+print(f"train accuracy {acc:.1%}")</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>epoch  5 | last batch loss 0.1457
+epoch 10 | last batch loss 0.0743
+epoch 15 | last batch loss 0.0598
+epoch 20 | last batch loss 0.0200
+train accuracy 98.8%</code></pre></div>
+<h2 id="losses">Losses</h2>
+<p>Every loss exists as a function in <code>mytorcha.functional</code> and as a module in <code>mytorcha.nn</code>. All of them take <code>reduction="mean" | "sum" | "none"</code>.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Module</th><th>Function</th><th>Use it for</th></tr></thead>
+<tbody>
+<tr><td><code>MSELoss</code></td><td><code>mse_loss</code></td><td>regression; punishes big errors hard (squared)</td></tr>
+<tr><td><code>L1Loss</code></td><td><code>l1_loss</code></td><td>regression that shouldn't be bullied by outliers</td></tr>
+<tr><td><code>HuberLoss</code></td><td><code>huber_loss(delta=1.0)</code></td><td>the compromise: squared near 0, linear beyond <code>delta</code></td></tr>
+<tr><td><code>SmoothL1Loss</code></td><td><code>smooth_l1_loss(beta=1.0)</code></td><td>Huber divided by beta; the object-detection classic</td></tr>
+<tr><td><code>CrossEntropyLoss</code></td><td><code>cross_entropy(label_smoothing=0, ignore_index=None)</code></td><td>multi-class classification from raw logits (softmax built in)</td></tr>
+<tr><td><code>NLLLoss</code></td><td><code>nll_loss</code></td><td>the same, when you already have log-probabilities</td></tr>
+<tr><td><code>BCEWithLogitsLoss</code></td><td><code>binary_cross_entropy_with_logits</code></td><td>yes/no or multi-label targets from raw logits; the stable choice</td></tr>
+<tr><td><code>BCELoss</code></td><td><code>binary_cross_entropy</code></td><td>the same from probabilities (clipped to avoid log 0)</td></tr>
+<tr><td><code>KLDivLoss</code></td><td><code>kl_div</code></td><td>matching a distribution: distillation, VAEs</td></tr>
+<tr><td><code>HingeLoss</code></td><td><code>hinge_loss(margin=1.0)</code></td><td>multi-class SVM margin loss</td></tr>
+</tbody></table></div>
+<p>Cross-entropy is the one you'll use most, so here it is up close:</p>
+<div class="code"><pre><code class="lang-python">import numpy as np
+import mytorcha as mt
+import mytorcha.functional as F
+
+logits = mt.Tensor([[2.0, 0.5, -1.0], [0.1, 0.2, 3.0]], requires_grad=True)
+target = np.array([0, 2])
+loss = F.cross_entropy(logits, target)
+loss.backward()
+print(round(loss.item(), 4))
+print(np.round(logits.grad, 4))</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>0.1755
+[[-0.1072  0.0876  0.0196]
+ [ 0.0247  0.0272 -0.0519]]</code></pre></div>
+<p>The gradient is <code>(softmax(logits) − one_hot(target)) / N</code>: push the right class up and the others down, in proportion to how confident the model was. Internally it uses a stable <code>log_softmax</code> that subtracts the max before exponentiating, so logits of 1000 don't overflow. That was bug #8 in v1.</p>
+<div class="note"><p><strong>One deliberate difference from PyTorch.</strong> MyTorcha puts the classes on the <strong>last</strong> axis: logits are <code>(..., C)</code> and targets are <code>(...)</code>. PyTorch wants classes on axis 1. The payoff is that a sequence model's <code>(N, T, C)</code> output goes straight into the loss without a transpose:</p>
+<div class="code"><pre><code class="lang-python">import numpy as np
+import mytorcha as mt
+from mytorcha import nn
+
+seq = mt.randn(4, 7, 50)                                       # (batch, time, vocab)
+labels = np.random.default_rng(0).integers(0, 50, (4, 7))
+print(nn.CrossEntropyLoss()(seq, labels).shape)                # a scalar</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>()</code></pre></div>
+</div>
+
+<h2 id="optimizers">Optimizers</h2>
+<p>An optimizer gets the parameter list once, then <code>step()</code> updates each parameter from its <code>.grad</code>. Every optimizer keeps <strong>its own state per parameter</strong>: a momentum buffer shaped like that weight. That sounds obvious, but v1 got it wrong (bug #4). It had <em>one</em> scalar momentum shared by all weights, so each weight's update was polluted by every other weight's gradients.</p>
+<div class="code"><pre><code class="lang-python">import numpy as np
+from mytorcha import nn, optim
+
+a, b = nn.Parameter([1.0]), nn.Parameter([1.0])
+opt = optim.Adam([a, b], lr=0.1)
+a.grad = np.array([1.0], np.float32)      # a should go down...
+b.grad = np.array([-1.0], np.float32)     # ...and b should go up
+opt.step()
+print(a.data, b.data, sorted(opt.state[0]))</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>[0.9] [1.1] ['m', 'v']</code></pre></div>
+<p>Below, <code>g</code> is the gradient, <code>w</code> the weight and <code>η</code> the learning rate. All formulas follow the PyTorch documentation, and the tests check them against <code>torch.optim</code> to within 10⁻⁶.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Optimizer</th><th>Update (per element)</th><th>When to use it</th></tr></thead>
+<tbody>
+<tr><td><code>SGD(lr, momentum, nesterov, weight_decay)</code></td><td><code>v = μv + g;  w −= η·v</code> (Nesterov: <code>w −= η(g + μv)</code>)</td><td>the baseline; with momentum, still a top choice for CNNs</td></tr>
+<tr><td><code>Adagrad(lr)</code></td><td><code>s += g²;  w −= η·g/(√s + ε)</code></td><td>sparse features; the step size only ever shrinks</td></tr>
+<tr><td><code>RMSprop(lr, alpha, momentum, centered)</code></td><td><code>s = αs + (1−α)g²;  w −= η·g/(√s + ε)</code></td><td>RNNs, non-stationary problems</td></tr>
+<tr><td><code>Adadelta(lr=1.0, rho)</code></td><td>RMSprop with a step scaled by the RMS of past updates</td><td>when you don't want to tune lr</td></tr>
+<tr><td><code>Adam(lr, betas, amsgrad)</code></td><td><code>m = β₁m + (1−β₁)g;  v = β₂v + (1−β₂)g²;  w −= η·m̂/(√v̂ + ε)</code> with bias-corrected <code>m̂, v̂</code></td><td>the default for almost everything</td></tr>
+<tr><td><code>AdamW(lr, weight_decay=0.01)</code></td><td>Adam, plus <code>w −= η·λ·w</code> applied directly (decoupled)</td><td>Transformers, and any time you want weight decay with Adam</td></tr>
+<tr><td><code>Adamax(lr)</code></td><td>Adam with <code>u = max(β₂u, |g|)</code> instead of √v</td><td>a robust Adam variant</td></tr>
+<tr><td><code>Lion(lr, betas)</code></td><td><code>w −= η·sign(β₁m + (1−β₁)g)</code></td><td>modern and memory-light; use about 10× smaller lr than Adam</td></tr>
+</tbody></table></div>
+<div class="note"><p><strong>Why bias correction?</strong> Adam's averages <code>m</code> and <code>v</code> start at zero, so early on they underestimate the true moments. Dividing by <code>1 − βᵗ</code> fixes that. v1 had no bias correction and unusual betas (0.99, 0.994). The standard (0.9, 0.999) are the defaults now.</p></div>
+
+<h2 id="race">The optimizer race</h2>
+<p>Four optimizers start at the same point on a 2-D loss surface. The "long valley" is steep across and almost flat along its length. Plain SGD has to use a small step to avoid bouncing across the steep direction, so it crawls along the flat one. Momentum builds up speed along the valley. RMSprop and Adam rescale each coordinate by its own gradient size. The slider multiplies every optimizer's learning rate. Push it up and watch who diverges first.</p>
+<div class="widget race-wrap" data-widget="race">
+  <h4>Optimizer race</h4>
+  <p class="noscript">This animation needs JavaScript. The paragraph above describes what it shows.</p>
+  <div hidden>
+    <canvas width="640" height="480" aria-label="Contour plot of the loss surface with the paths of four optimizers"></canvas>
+    <ul class="legend" aria-live="polite"></ul>
+    <div class="controls">
+      <label for="r-surface">surface <select id="r-surface" name="surface" class="btn"><option value="valley">long valley</option><option value="rosenbrock">Rosenbrock banana</option></select></label>
+      <label for="r-lr">learning-rate multiplier <output for="r-lr"></output><input id="r-lr" name="lrmul" type="range" min="0.25" max="3" step="0.05" value="1"></label>
+    </div>
+    <div class="btns">
+      <button type="button" class="btn primary" data-act="play">Play</button>
+      <button type="button" class="btn" data-act="step">Step ×10</button>
+      <button type="button" class="btn" data-act="reset">Reset</button>
+    </div>
+    <p class="hint">Each optimizer has its own base learning rate, because they work on different scales (Adam's lr is roughly a step size in weight units, SGD's multiplies the raw gradient). The banana gets smaller rates than the valley because it is far more curved: on the banana SGD needs lr ≈ 0.004 where the valley allows 0.12. With reduced motion turned on, Play jumps straight to the end.</p>
+  </div>
+</div>
+
+<h2 id="schedules">Learning-rate schedules</h2>
+<p>A scheduler changes <code>optimizer.lr</code> each time you call <code>scheduler.step()</code>, usually once per epoch:</p>
+<div class="code"><pre><code class="lang-python">from mytorcha import nn, optim
+
+def lrs(make, n=6):
+    opt = optim.SGD([nn.Parameter([0.0])], lr=1.0)
+    s = make(opt)
+    return [round(s.step(), 3) for _ in range(n)]
+
+print("StepLR       ", lrs(lambda o: optim.StepLR(o, step_size=2, gamma=0.5)))
+print("ExponentialLR", lrs(lambda o: optim.ExponentialLR(o, gamma=0.8)))
+print("Cosine       ", lrs(lambda o: optim.CosineAnnealingLR(o, T_max=6)))
+print("Warm-up      ", lrs(lambda o: optim.LambdaLR(o, lambda e: min(1.0, (e + 1) / 4))))</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>StepLR        [1.0, 0.5, 0.5, 0.25, 0.25, 0.125]
+ExponentialLR [0.8, 0.64, 0.512, 0.41, 0.328, 0.262]
+Cosine        [0.933, 0.75, 0.5, 0.25, 0.067, 0.0]
+Warm-up       [0.5, 0.75, 1.0, 1.0, 1.0, 1.0]</code></pre></div>
+<p>Cosine annealing is a good default. A linear warm-up (with <code>LambdaLR</code>) is standard for Transformers, because Adam's early steps are unreliable until its moment estimates have warmed up.</p>
+
+<h2 id="clipping">Gradient clipping</h2>
+<div class="code"><pre><code class="lang-python">import numpy as np
+from mytorcha import nn, optim
+
+w = nn.Parameter([0.0, 0.0])
+w.grad = np.array([30.0, 40.0], dtype=np.float32)
+print(optim.clip_grad_norm_([w], max_norm=1.0), w.grad)</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>50.0 [0.59999996 0.79999995]</code></pre></div>
+<p><code>clip_grad_norm_</code> treats all gradients as one long vector. If its length is above <code>max_norm</code>, every gradient is scaled down by the same factor, so the <em>direction</em> is kept and only the step is shortened. It returns the norm before clipping, which is worth logging. Recurrent networks need this (chapter 6).</p>
+
+<h2 id="data">Data: Dataset, TensorDataset, DataLoader</h2>
+<ul>
+  <li><code>TensorDataset(X, y)</code> wraps arrays that share their first dimension.</li>
+  <li><code>DataLoader(ds, batch_size=32, shuffle=True, drop_last=False)</code> yields tuples of Tensors. Float arrays become float32, and integer labels stay integers. With <code>shuffle=True</code> it reshuffles every epoch using the global seed.</li>
+  <li>For anything custom, subclass <code>Dataset</code> with <code>__len__</code> and <code>__getitem__(i)</code> returning a tuple of arrays. The loader stacks them.</li>
+</ul>
+<div class="code"><pre><code class="lang-python">class Squares(mt.Dataset):
+    def __len__(self):
+        return 100
+    def __getitem__(self, i):
+        x = np.array([i / 100], dtype=np.float32)
+        return x, x ** 2
+
+for xb, yb in mt.DataLoader(Squares(), batch_size=16, shuffle=True):
+    ...</code></pre></div>
+<p>Built-in toy datasets (nothing is downloaded): <code>make_spirals</code>, <code>make_moons</code>, <code>sine_sequences</code>, and <code>load_digits_csv</code> for the Kaggle digits CSV that ships in <code>data/</code>.</p>
+
+<h2 id="trainer">Or let <code>Trainer</code> write the loop</h2>
+<p><code>mt.Trainer</code> is the five-line loop plus evaluation, a scheduler, optional clipping and a history list. It's about 75 lines in <code>src/mytorcha/trainer.py</code>, so do read it.</p>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn, optim
+
+mt.manual_seed(0)
+Xtr, ytr = mt.datasets.make_moons(n=400, noise=0.15)
+Xva, yva = mt.datasets.make_moons(n=200, noise=0.15)
+model = nn.Sequential(nn.Linear(2, 32), nn.Tanh(), nn.Linear(32, 2))
+opt = optim.AdamW(model.parameters(), lr=1e-2, weight_decay=1e-4)
+trainer = mt.Trainer(model, nn.CrossEntropyLoss(), opt, scheduler=optim.CosineAnnealingLR(opt, T_max=5))
+history = trainer.fit(mt.DataLoader(mt.TensorDataset(Xtr, ytr), batch_size=32, shuffle=True), epochs=5,
+                      val_loader=mt.DataLoader(mt.TensorDataset(Xva, yva), batch_size=200))
+print(trainer.predict(Xva[:3]).argmax(-1), yva[:3])</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>epoch 1 | train_loss 0.4522 | val_loss 0.4051 | val_acc 0.7650 | time 0.0047
+epoch 2 | train_loss 0.3430 | val_loss 0.3264 | val_acc 0.8300 | time 0.0050
+epoch 3 | train_loss 0.2963 | val_loss 0.3037 | val_acc 0.8450 | time 0.0048
+epoch 4 | train_loss 0.2825 | val_loss 0.2873 | val_acc 0.8600 | time 0.0043
+epoch 5 | train_loss 0.2788 | val_loss 0.2873 | val_acc 0.8600 | time 0.0047
+[1 0 0] [1 0 0]</code></pre></div>
+<p>(Your <code>time</code> column will differ. Everything else is seeded.) Use <code>metric=None</code> for regression. <code>clip_grad=1.0</code> turns on clipping. <code>trainer.history</code> keeps every row for plotting.</p>
+
+<h2 id="try">Try it</h2>
+<details class="try"><summary>1. In the five-line loop, swap <code>zero_grad()</code> and <code>backward()</code>. What happens?</summary>
+<div class="answer"><p>You compute the gradients and then immediately erase them, so <code>step()</code> finds <code>grad = None</code> and does nothing. The loss never moves. Order matters: zero, backward, step.</p></div></details>
+<details class="try"><summary>2. Logits are <code>[0, 0, 0]</code> and the target is class 1. What is the cross-entropy?</summary>
+<div class="answer"><p><strong>log 3 ≈ 1.0986</strong>. Equal logits mean a uniform 1/3 for each class, and −log(1/3) = log 3. Remember it: an untrained C-class model starts at a loss of about log C. The tiny GPT in chapter 7 (17 characters) starts at 3.07, a little above log 17 ≈ 2.83, because random weights are not perfectly uniform.</p></div></details>
+<details class="try"><summary>3. In the race, why can't you just raise SGD's learning rate until it's as fast as Adam?</summary>
+<div class="answer"><p>SGD has one learning rate for every direction. The steep direction (curvature 4) diverges once lr &gt; 0.5, while the flat one (curvature 0.1) would want lr ≈ 10. Adam and RMSprop divide by each coordinate's own gradient scale, which acts like a per-direction learning rate.</p></div></details>
+
+<nav class="pager" aria-label="Chapter navigation"><a class="prev" href="03-modules.html" rel="prev"><span>← Previous</span>Modules and layers</a><a class="next" href="05-cnn.html" rel="next"><span>Next →</span>Convolutional networks</a></nav>
+<p class="foot">MyTorcha by <a href="https://github.com/benisalla">Ismail Ben Alla</a>. MIT licensed. The deal is in the details.</p>
+</article>
+</main>
+</div>
+</body>
+</html>

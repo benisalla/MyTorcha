@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyTorcha — a tiny deep learning framework built from scratch</title>
+<meta name="description" content="MyTorcha is a small deep learning framework written from scratch in Python and NumPy: autograd, CNNs, RNNs, LSTMs, attention, losses and optimizers, explained chapter by chapter.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="24" height="24">MyTorcha</a>
+  <button type="button" class="menu-btn" aria-controls="sidebar" aria-expanded="false">Chapters</button>
+</header>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Chapters">
+  <a class="brand" href="index.html"><img src="assets/favicon.svg" alt="" width="28" height="28">MyTorcha</a>
+  <p class="tagline">A baby deep learning framework, built from scratch so nothing is magic.</p>
+  <ol>
+<li><a href="index.html" aria-current="page"><span class="num">·</span>Start here</a></li>
+<li><a href="01-autograd.html"><span class="num">01</span>Autograd with single numbers</a></li>
+<li><a href="02-tensors.html"><span class="num">02</span>Tensors</a></li>
+<li><a href="03-modules.html"><span class="num">03</span>Modules and layers</a></li>
+<li><a href="04-training.html"><span class="num">04</span>Losses, optimizers, training</a></li>
+<li><a href="05-cnn.html"><span class="num">05</span>Convolutional networks</a></li>
+<li><a href="06-rnn.html"><span class="num">06</span>RNN, LSTM, GRU</a></li>
+<li><a href="07-attention.html"><span class="num">07</span>Attention and Transformers</a></li>
+<li><a href="reference.html"><span class="num">API</span>API reference</a></li>
+  </ol>
+  <p class="side-foot"><a href="https://github.com/benisalla/MyTorcha">Source on GitHub</a></p>
+</nav>
+<main id="main">
+<article class="content">
+<p class="kicker">MyTorcha 0.2</p>
+<h1>A deep learning framework you can read in an afternoon</h1>
+<p class="lead">MyTorcha is a small framework, written from scratch in Python and NumPy, that trains real neural networks: MLPs, CNNs, RNNs, LSTMs, GRUs and Transformers. Every gradient is computed by code you can open and read. No magic, no C++ kernels hiding in the basement.</p>
+
+<blockquote>“The deal is in the details.” PyTorch hides the details so you can ship. MyTorcha shows them so you can understand. Then you go back to PyTorch, and it suddenly makes sense.</blockquote>
+
+<p>It started as a <em>baby framework that hopes to grow into something bigger, Inshallah</em>. Version 0.2 is the growth spurt. It has two engines that share one idea:</p>
+<ul>
+  <li><strong><code>mytorcha.scalar</code></strong>: every number is its own node in a graph. It's slow, but you can watch backpropagation happen one multiplication at a time. This is the original MyTorcha, bug-fixed.</li>
+  <li><strong><code>mytorcha.Tensor</code></strong>: the same chain rule, but every node holds a whole NumPy array. Fast enough to train a CNN on handwritten digits on a laptop CPU.</li>
+</ul>
+<p>The only runtime dependency is NumPy. PyTorch appears in exactly one place: the test suite, which checks that our numbers match theirs.</p>
+
+<h2 id="install">Install</h2>
+<div class="code"><pre><code class="lang-bash">git clone https://github.com/benisalla/MyTorcha
+cd MyTorcha
+pip install -e .            # the framework (needs only NumPy)
+pip install -e '.[dev]'     # + pytest and ruff, if you want to run the tests
+pytest                      # 160 tests: gradient checks and PyTorch parity</code></pre></div>
+<p>Python 3.10 or newer. If you also want the PyTorch comparison tests, install <code>torch</code> too (<code>pip install -e '.[parity]'</code>). Without it, those tests are skipped politely.</p>
+
+<h2 id="thirty-seconds">MyTorcha in 30 seconds</h2>
+<p>Three spirals of points, one per class. No straight line can separate them, so a linear model should fail and a small MLP should not. Baseline first, then the idea:</p>
+<div class="code"><pre><code class="lang-python">import mytorcha as mt
+from mytorcha import nn, optim
+
+mt.manual_seed(0)
+X, y = mt.datasets.make_spirals(n_per_class=100, n_classes=3)
+loader = mt.DataLoader(mt.TensorDataset(X, y), batch_size=32, shuffle=True)
+full = mt.DataLoader(mt.TensorDataset(X, y), batch_size=300)
+
+def train(model):
+    trainer = mt.Trainer(model, nn.CrossEntropyLoss(), optim.Adam(model.parameters(), lr=1e-2))
+    trainer.fit(loader, epochs=200, verbose=False)
+    return trainer.evaluate(full)["acc"]
+
+linear = nn.Linear(2, 3)
+mlp = nn.Sequential(nn.Linear(2, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 3))
+print(f"linear accuracy: {train(linear):.1%}")
+print(f"MLP accuracy:    {train(mlp):.1%}")</code></pre></div>
+<div class="code output"><span class="label">output</span><pre><code>linear accuracy: 53.7%
+MLP accuracy:    99.3%</code></pre></div>
+<p>If that code looks exactly like PyTorch, that's on purpose. The API is borrowed, and the insides are home-made.</p>
+
+<h2 id="chapters">The chapters</h2>
+<p>Each chapter builds on the previous one. Every snippet runs, every output on these pages was produced by actually running it, and each chapter ends with "try it" questions. Predict the answer <em>before</em> you open it. That's where the learning happens.</p>
+<ol>
+  <li><a href="01-autograd.html">Autograd with single numbers</a>: a computation graph by hand, the chain rule, and an interactive graph you can poke.</li>
+  <li><a href="02-tensors.html">Tensors</a>: the same idea for whole arrays, broadcasting, and the gradient checker that keeps us honest.</li>
+  <li><a href="03-modules.html">Modules and layers</a>: <code>Module</code>, <code>Parameter</code>, <code>Sequential</code>, saving and loading, weight init.</li>
+  <li><a href="04-training.html">Losses, optimizers, training</a>: all 10 losses, all 8 optimizers, schedules, clipping, and an optimizer race.</li>
+  <li><a href="05-cnn.html">Convolutional networks</a>: Conv2d, pooling, BatchNorm, im2col, plus a convolution visualiser.</li>
+  <li><a href="06-rnn.html">RNN, LSTM, GRU</a>: recurrence, gates, backpropagation through time, and a text-writing LSTM.</li>
+  <li><a href="07-attention.html">Attention and Transformers</a>: multi-head attention, causal masks, and a tiny GPT.</li>
+</ol>
+<p>And the <a href="reference.html">API reference</a>, with every public function and its exact signature.</p>
+
+<h2 id="results">What it can actually do</h2>
+<p>All numbers below come from the scripts in <code>examples/</code>, run on a CPU with <code>mt.manual_seed(0)</code>. Nothing is rounded up, and nothing comes from a paper.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Task</th><th>Model</th><th class="num">Params</th><th class="num">Result</th></tr></thead>
+<tbody>
+<tr><td rowspan="2">Spirals, 3 classes (<code>02_spirals_mlp.py</code>)</td><td>Linear baseline</td><td class="num">9</td><td class="num">53.7% acc</td></tr>
+<tr><td>MLP 64-64</td><td class="num">4,547</td><td class="num good">99.3% acc</td></tr>
+<tr><td rowspan="2">Digits, 10k train / 2k val, 3 epochs (<code>03_digits_mlp_vs_cnn.py</code>)</td><td>MLP 784-128-10</td><td class="num">101,770</td><td class="num">93.65% val</td></tr>
+<tr><td>Small CNN</td><td class="num">9,146</td><td class="num good">97.10% val</td></tr>
+<tr><td rowspan="4">Sine wave, next-step MSE (<code>04_sine_rnn_lstm_gru.py</code>)</td><td>Baseline: copy last value</td><td class="num">0</td><td class="num">0.03605</td></tr>
+<tr><td>RNN</td><td class="num">1,153</td><td class="num">0.00835</td></tr>
+<tr><td>LSTM</td><td class="num">4,513</td><td class="num">0.00504</td></tr>
+<tr><td>GRU</td><td class="num">3,393</td><td class="num good">0.00495</td></tr>
+<tr><td>Character-level text (<code>05_char_lstm.py</code>)</td><td>Embedding + LSTM</td><td class="num">86,969</td><td class="num">writes its training text after 300 steps</td></tr>
+<tr><td>Character-level text (<code>06_tiny_transformer.py</code>)</td><td>Tiny GPT, 2 blocks</td><td class="num">59,825</td><td class="num">loss 3.07 → 0.059 in 200 steps</td></tr>
+</tbody></table></div>
+<p>The CNN beats the MLP with <strong>11× fewer parameters</strong>. That's what weight sharing buys you (chapter 5).</p>
+<p>And the scalar engine vs the Tensor engine, on the exact 784 → 10 layer from the original <code>main.py</code>: one image builds <strong>31,427 scalar nodes</strong>, and the Tensor engine did the same batch about <strong>3,800× faster</strong>. The machine was busy with other training jobs, so read that as "three to four orders of magnitude", not as a precise benchmark.</p>
+
+<h2 id="v1">What version 1 got wrong</h2>
+<p>The first MyTorcha had the right idea and several bugs. Some of them meant it couldn't learn properly. Every row below was reproduced before it was fixed, and each fix now has a test so it can't come back.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Where</th><th>Bug</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>Node.log</code></td><td>backward used <code>1/log(x)</code> instead of <code>1/x</code></td><td>d/dx log(x) at x=2 gave <span class="bad">1.4427</span> instead of <span class="good">0.5</span>. Every loss using log was wrong.</td></tr>
+<tr><td>2</td><td><code>Node.elu</code></td><td>backward used <code>x·eˣ</code> instead of <code>α·eˣ</code></td><td>at x=−1 it gave <span class="bad">−0.3679</span> instead of <span class="good">+0.3679</span>: the wrong sign.</td></tr>
+<tr><td>3</td><td><code>Node.__eq__</code> / <code>__hash__</code></td><td>nodes compared by <em>value</em>, and the hash changed as the gradient changed</td><td>two different weights holding 3.0 collapsed into <strong>one</strong> set entry, so <code>backward()</code> could skip whole subgraphs</td></tr>
+<tr><td>4</td><td>Stateful optimizers</td><td>one scalar <code>momentum</code> / <code>cache</code> shared by all parameters</td><td>Adam, RMSProp, Adagrad and momentum mixed every weight's history together</td></tr>
+<tr><td>5</td><td><code>gradient_descent</code></td><td>defined as <code>opt_function(model)</code>, called as <code>opt_function()</code></td><td>crashed with a <code>TypeError</code> (after printing "we are in sgd")</td></tr>
+<tr><td>6</td><td><code>SimpleFC</code></td><td>ReLU also applied to the output layer</td><td>negative logits were clipped to 0 before the softmax</td></tr>
+<tr><td>7</td><td><code>main.py</code></td><td>train/validation split swapped</td><td>trained on 10% of the data and "validated" on 90%</td></tr>
+<tr><td>8</td><td><code>tanh</code>, <code>sigmoid</code>, <code>softplus</code>, softmax</td><td>raw <code>exp</code></td><td>overflow on large inputs</td></tr>
+<tr><td>9</td><td><code>backward()</code></td><td>recursive topological sort</td><td>hits Python's recursion limit: one 784-input neuron is already a chain ~785 additions deep</td></tr>
+<tr><td>10</td><td>README</td><td><code>requirements.txt</code> didn't exist, and the example used the wrong argument names</td><td>the quick start didn't run</td></tr>
+</tbody></table></div>
+<p>The old code still lives in <code>legacy/</code>, for archaeology and humility.</p>
+
+<h2 id="layout">What's in the box</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Module</th><th>What it holds</th></tr></thead>
+<tbody>
+<tr><td><code>mytorcha.scalar</code></td><td><code>Node</code>, <code>Neuron</code>, <code>Layer</code>, <code>MLP</code>: the one-number-at-a-time engine</td></tr>
+<tr><td><code>mytorcha.Tensor</code></td><td>the array autograd engine: arithmetic, matmul, reductions, reshapes, indexing</td></tr>
+<tr><td><code>mytorcha.functional</code></td><td>20 activations, softmax family, 10 losses, conv/pool, dropout, attention</td></tr>
+<tr><td><code>mytorcha.nn</code></td><td>Linear, Conv1d/2d, ConvTranspose2d, pooling, BatchNorm/LayerNorm/GroupNorm, Dropout, Embedding, RNN/LSTM/GRU, MultiheadAttention, TransformerEncoderLayer, activation and loss modules</td></tr>
+<tr><td><code>mytorcha.optim</code></td><td>SGD (momentum, Nesterov), Adagrad, RMSprop, Adadelta, Adam, AdamW, Adamax, Lion, plus schedulers and gradient clipping</td></tr>
+<tr><td><code>mytorcha.init</code></td><td>Xavier, Kaiming, orthogonal and friends</td></tr>
+<tr><td><code>DataLoader</code>, <code>Trainer</code></td><td>batching, and a training loop short enough to read</td></tr>
+<tr><td><code>mytorcha.gradcheck</code></td><td>finite-difference gradient checking, the framework's lie detector</td></tr>
+</tbody></table></div>
+<p>Ready? Start with <a href="01-autograd.html">chapter 1</a>. It's the one that makes everything else obvious.</p>
+
+<nav class="pager" aria-label="Chapter navigation"><a class="next" href="01-autograd.html" rel="next"><span>Next →</span>Autograd with single numbers</a></nav>
+<p class="foot">MyTorcha by <a href="https://github.com/benisalla">Ismail Ben Alla</a>. MIT licensed. The deal is in the details.</p>
+</article>
+</main>
+</div>
+</body>
+</html>
