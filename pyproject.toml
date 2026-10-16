@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mytorcha"
+version = "0.2.0"
+description = "A tiny deep learning framework built from scratch on NumPy: autograd, layers (CNN, RNN, LSTM, GRU, attention), losses and optimizers."
+readme = "README.md"
+authors = [{ name = "Ismail Ben Alla", email = "ismailbenalla52@gmail.com" }]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+viz = ["graphviz"]
+dev = ["pytest>=8", "ruff>=0.9"]
+parity = ["torch>=2.2"]   # only used by tests/test_torch_parity.py
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mytorcha"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+filterwarnings = ["error::RuntimeWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["legacy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "RUF"]
+ignore = ["E501", "E731", "E741", "B905", "RUF005", "RUF001", "RUF002", "RUF003"]  # formula-style code: O, C, H, W names; unicode math in docstrings
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401"]   # re-exports
