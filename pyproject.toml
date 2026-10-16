@@ -8,6 +8,7 @@ version = "0.2.0"
 description = "A tiny deep learning framework built from scratch on NumPy: autograd, layers (CNN, RNN, LSTM, GRU, attention), losses and optimizers."
 readme = "README.md"
 authors = [{ name = "Ismail Ben Alla", email = "ismailbenalla52@gmail.com" }]
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24"]
 

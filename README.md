@@ -45,18 +45,17 @@ The ConvNets and Transformers that were "almost done, just fixing some bugs" in 
 - [Future roadmap](#future-roadmap)
 - [Contributing](#contributing)
 - [Contact](#contact)
+- [License](#license)
 
 ---
 
 ## Learn it: the website
 
-The [`docs/`](docs/) folder is a small website that teaches MyTorcha chapter by chapter.
+**👉 [benisalla.github.io/MyTorcha](https://benisalla.github.io/MyTorcha/)** is a small website (source in [`docs/`](docs/)) that teaches MyTorcha chapter by chapter.
 It has runnable code, "predict the output" exercises and interactive widgets: a live
 computation graph, an optimizer race and a convolution visualizer.
 
-```bash
-python -m http.server 8000 -d docs     # then open http://localhost:8000
-```
+Offline? `python -m http.server 8000 -d docs`, then open http://localhost:8000.
 
 | Chapter | You learn |
 |---|---|
@@ -277,3 +276,9 @@ Let's connect and explore the world of AI together! 🤖🌟
 <div align="center">
   <img src="https://github-production-user-asset-6210df.s3.amazonaws.com/89405673/288196444-aae5a2b5-6623-4f1e-9149-be45342093c3.gif" width="500" height="300" alt="Neural Net Humor"/>
 </div>
+
+---
+
+## License
+
+[MIT](LICENSE). Open source because I love open source: take it, break it, learn from it.
